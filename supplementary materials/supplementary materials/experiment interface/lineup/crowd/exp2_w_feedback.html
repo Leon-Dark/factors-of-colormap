@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<head>
+	<!--
+	<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+	-->
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+	<script src="https://d3js.org/d3-queue.v3.min.js"></script>
+
+	
+	</script>
+	<script src="../../jnd/lib/d3.min.js"></script>
+	<script src="https://d3js.org/d3-axis.v1.min.js"></script>
+	<script src="../../src/scalar.js"></script>
+	<script src="../../design/src/stimuliColormaps.js"></script>
+	<script src="../../design/src/colormap.js"></script>
+	<script src="../../design/src/gl_pipeline.js"></script>
+	<script src="../../design/src/coloranalysis.js"></script>
+	<script src="../../jnd/lib/three.min.js"></script>
+	<script src="../gaussmix.js"></script>
+	<script src="../gaussmix_bivariate.js"></script>
+	<script src="../gauss_w_noise.js"></script>
+	<script src="../scalar_sample.js"></script>
+	<script src="../lineup.js"></script>
+	<script src="../sim.js"></script>
+	<script src="../lineup_experiment.js"></script>
+
+	<!-- shaders -->
+	<!-- ********************************************** -->
+	<script type="x-shader/x-fragment" id="shader_pdfSample">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform float randomSeed;
+
+		// Gold Noise 2015 dcerisano@standard3d.com
+		// - based on the Golden Ratio
+		// - uniform normalized distribution
+		// - fastest static noise generator function (also runs at low precision)
+		// - use with indicated seeding method.
+
+		const float PHI = 1.61803398874989484820459;  // Golden Ratio
+		const float P = 1.0 / 1.1;
+		const int SAMPLES = 20;
+		const float W = 1.0 / float(SAMPLES);
+
+
+		float gold_noise(in vec2 xy, in float seed){
+		       return fract(tan(distance(xy*PHI, xy)*seed)*xy.x);
+		}
+
+		void main()
+		{
+		    float pdfDensity = P * texture2D(scalarField, oTexCoord).x;
+		    float val = 0.0;
+		    float seed = randomSeed;
+
+
+		    for (int i = 0; i < SAMPLES; i++)
+		    {
+		        float r = gold_noise(gl_FragCoord.xy, fract(seed) + 1.0);
+		        val += (r < pdfDensity ? W : 0.0);
+		        seed = r;
+		    }
+
+		    gl_FragColor = vec4(val);
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_pdfPlot">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+
+		void main()
+		{
+		    float pdfDensity = texture2D(scalarField, oTexCoord).x;
+		    float val = pdfDensity;
+		    gl_FragColor = texture2D(colormap, vec2(val, 0.5));
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_vis">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform float contour;
+
+		void main()
+		{
+			float data = texture2D(scalarField, oTexCoord).x;
+
+			vec2 colormapCoord = vec2(data, 0.5);
+			if (contour >= 0.0 && abs(data-contour) < .0035)
+			{
+				gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+			}
+			else
+			{
+				if (data >= 0.0)
+				{
+					gl_FragColor = texture2D(colormap, colormapCoord);
+				}
+				else
+				{
+					gl_FragColor = vec4(1.0);
+					//gl_FragColor = mix(texture2D(colormap, colormapCoord), vec4(1.0), 0.7);
+				}
+			}
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_visWithMax">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform float minValue;
+		uniform float normTerm;
+
+		void main()
+		{
+			float data = texture2D(scalarField, oTexCoord).x;
+			if (data < -0.5)
+			{
+				gl_FragColor = vec4(1.0);
+			}
+			else
+			{
+				vec2 colormapCoord = vec2((data - minValue) * normTerm, 0.5);
+				gl_FragColor = texture2D(colormap, colormapCoord);
+			}
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_vertex">
+		varying vec2 oTexCoord;
+
+		void main()
+		{
+			oTexCoord = uv;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_blur">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform vec2 pitch;
+
+		const float GAUSS_WEIGHT = 1.0 / 1003.0;
+
+		#define T(k,l) texture2D(scalarField, oTexCoord + vec2(float(k), float(l)) * pitch).x
+
+		#define ROW(r, c1, c2, c3, c4, c5, c6, c7) (T(r, -3)*float(c1) + T(r, -2)*float(c2) + T(r, -1)*float(c3) + T(r, 0)*float(c4) + T(r, +1)*float(c5) + T(r, +2)*float(c6) + T(r, +3)*float(c7))
+
+
+		#define ROW1 ROW(-3, 0, 0 , 1 , 2  , 1 , 0 , 0)
+		#define ROW2 ROW(-2, 0, 3 , 13, 22 , 13, 3 , 0)
+		#define ROW3 ROW(-1, 1, 13, 59, 97 , 59, 13, 1)
+		#define ROW4 ROW( 0, 2, 22, 97, 159, 97, 22, 2)
+		#define ROW5 ROW(+1, 1, 13, 59, 97 , 59, 13, 1)
+		#define ROW6 ROW(+2, 0, 3 , 13, 22 , 13, 3 , 0)
+		#define ROW7 ROW(+3, 0, 0 , 1 , 2  , 1 , 0 , 0)
+
+		void main()
+		{
+			float val = (ROW1 + ROW2 + ROW3 + ROW4 + ROW5 + ROW6 + ROW7) *  GAUSS_WEIGHT;
+			if (val >= 0.0)
+		    {
+		        // blur with surround
+		        gl_FragColor = texture2D(colormap, vec2(val, 0.5));
+		    }
+		    else
+		    {
+		        gl_FragColor = vec4(1.0);
+		    }
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_blurOff">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform vec2 pitch;
+
+		const float GAUSS_WEIGHT = 1.0 / 1003.0;
+
+		#define T(k,l) texture2D(scalarField, oTexCoord + vec2(float(k), float(l)) * pitch).x
+
+		#define ROW(r, c1, c2, c3, c4, c5, c6, c7) (T(r, -3)*float(c1) + T(r, -2)*float(c2) + T(r, -1)*float(c3) + T(r, 0)*float(c4) + T(r, +1)*float(c5) + T(r, +2)*float(c6) + T(r, +3)*float(c7))
+
+
+		#define ROW1 ROW(-3, 0, 0 , 1 , 2  , 1 , 0 , 0)
+		#define ROW2 ROW(-2, 0, 3 , 13, 22 , 13, 3 , 0)
+		#define ROW3 ROW(-1, 1, 13, 59, 97 , 59, 13, 1)
+		#define ROW4 ROW( 0, 2, 22, 97, 159, 97, 22, 2)
+		#define ROW5 ROW(+1, 1, 13, 59, 97 , 59, 13, 1)
+		#define ROW6 ROW(+2, 0, 3 , 13, 22 , 13, 3 , 0)
+		#define ROW7 ROW(+3, 0, 0 , 1 , 2  , 1 , 0 , 0)
+
+		void main()
+		{
+			float val = (ROW1 + ROW2 + ROW3 + ROW4 + ROW5 + ROW6 + ROW7) *  GAUSS_WEIGHT;
+			gl_FragColor = vec4(val);
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_median">
+		/*
+		5x5 Median
+
+		GLSL 1.0
+		Morgan McGuire and Kyle Whitson, 2006
+		Williams College
+		http://graphics.cs.williams.edu
+
+		Copyright (c) Morgan McGuire and Williams College, 2006
+		All rights reserved.
+
+		Redistribution and use in source and binary forms, with or without
+		modification, are permitted provided that the following conditions are
+		met:
+
+		Redistributions of source code must retain the above copyright notice,
+		this list of conditions and the following disclaimer.
+
+		Redistributions in binary form must reproduce the above copyright
+		notice, this list of conditions and the following disclaimer in the
+		documentation and/or other materials provided with the distribution.
+
+		THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+		A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+		HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+		SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+		LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+		DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+		THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+		(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+		OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+		*/
+
+		// Input texture
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform vec2 pitch;
+
+
+		// Change these 2 defines to change precision
+		#define vec float
+		#define toVec(image) image.x
+
+		#define s2(a, b)				temp = a; a = min(a, b); b = max(temp, b);
+		#define t2(a, b)				s2(v[a], v[b]);
+		#define t24(a, b, c, d, e, f, g, h)			t2(a, b); t2(c, d); t2(e, f); t2(g, h);
+		#define t25(a, b, c, d, e, f, g, h, i, j)		t24(a, b, c, d, e, f, g, h); t2(i, j);
+
+
+		void main() {
+
+		  vec v[25];
+
+		  // Add the pixels which make up our window to the pixel array.
+		  for(int dX = -2; dX <= 2; ++dX) {
+		    for(int dY = -2; dY <= 2; ++dY) {
+		      vec2 offset = vec2(float(dX), float(dY)) * pitch;
+
+		      // If a pixel in the window is located at (x+dX, y+dY), put it at index (dX + R)(2R + 1) + (dY + R) of the
+		      // pixel array. This will fill the pixel array, with the top left pixel of the window at pixel[0] and the
+		      // bottom right pixel of the window at pixel[N-1].
+		      v[(dX + 2) * 5 + (dY + 2)] = toVec(texture2D(scalarField, oTexCoord + offset));
+		    }
+		  }
+
+		  vec temp;
+
+		  t25(0, 1,			3, 4,		2, 4,		2, 3,		6, 7);
+		  t25(5, 7,			5, 6,		9, 7,		1, 7,		1, 4);
+		  t25(12, 13,		11, 13,		11, 12,		15, 16,		14, 16);
+		  t25(14, 15,		18, 19,		17, 19,		17, 18,		21, 22);
+		  t25(20, 22,		20, 21,		23, 24,		2, 5,		3, 6);
+		  t25(0, 6,			0, 3,		4, 7,		1, 7,		1, 4);
+		  t25(11, 14,		8, 14,		8, 11,		12, 15,		9, 15);
+		  t25(9, 12,		13, 16,		10, 16,		10, 13,		20, 23);
+		  t25(17, 23,		17, 20,		21, 24,		18, 24,		18, 21);
+		  t25(19, 22,		8, 17,		9, 18,		0, 18,		0, 9);
+		  t25(10, 19,		1, 19,		1, 10,		11, 20,		2, 20);
+		  t25(2, 11,		12, 21,		3, 21,		3, 12,		13, 22);
+		  t25(4, 22,		4, 13,		14, 23,		5, 23,		5, 14);
+		  t25(15, 24,		6, 24,		6, 15,		7, 16,		7, 19);
+		  t25(3, 11,		5, 17,		11, 17,		9, 17,		4, 10);
+		  t25(6, 12,		7, 14,		4, 6,		4, 7,		12, 14);
+		  t25(10, 14,		6, 7,		10, 12,		6, 10,		6, 17);
+		  t25(12, 17,		7, 17,		7, 10,		12, 18,		7, 12);
+		  t24(10, 18,		12, 20,		10, 20,		10, 12);
+
+		  //toVec(gl_FragColor) = v[12];
+		  vec medianValue = v[12];
+
+		  // map to color
+		  vec2 colormapCoord = vec2(medianValue, 0.5);
+		  if (medianValue >= 0.0)
+		  {
+		      // blur with surround
+		      gl_FragColor = texture2D(colormap, colormapCoord);
+		  }
+		  else
+		  {
+		      gl_FragColor = vec4(1.0);
+		  }
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_medianOff">
+		/*
+		5x5 Median
+
+		GLSL 1.0
+		Morgan McGuire and Kyle Whitson, 2006
+		Williams College
+		http://graphics.cs.williams.edu
+
+		Copyright (c) Morgan McGuire and Williams College, 2006
+		All rights reserved.
+
+		Redistribution and use in source and binary forms, with or without
+		modification, are permitted provided that the following conditions are
+		met:
+
+		Redistributions of source code must retain the above copyright notice,
+		this list of conditions and the following disclaimer.
+
+		Redistributions in binary form must reproduce the above copyright
+		notice, this list of conditions and the following disclaimer in the
+		documentation and/or other materials provided with the distribution.
+
+		THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+		A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+		HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+		SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+		LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+		DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+		THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+		(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+		OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+		*/
+
+		// Input texture
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform vec2 pitch;
+
+
+		// Change these 2 defines to change precision
+		#define vec float
+		#define toVec(image) image.x
+
+		#define s2(a, b)				temp = a; a = min(a, b); b = max(temp, b);
+		#define t2(a, b)				s2(v[a], v[b]);
+		#define t24(a, b, c, d, e, f, g, h)			t2(a, b); t2(c, d); t2(e, f); t2(g, h);
+		#define t25(a, b, c, d, e, f, g, h, i, j)		t24(a, b, c, d, e, f, g, h); t2(i, j);
+
+
+		void main() {
+
+		  vec v[25];
+
+		  // Add the pixels which make up our window to the pixel array.
+		  for(int dX = -2; dX <= 2; ++dX) {
+		    for(int dY = -2; dY <= 2; ++dY) {
+		      vec2 offset = vec2(float(dX), float(dY)) * pitch;
+
+		      // If a pixel in the window is located at (x+dX, y+dY), put it at index (dX + R)(2R + 1) + (dY + R) of the
+		      // pixel array. This will fill the pixel array, with the top left pixel of the window at pixel[0] and the
+		      // bottom right pixel of the window at pixel[N-1].
+		      v[(dX + 2) * 5 + (dY + 2)] = toVec(texture2D(scalarField, oTexCoord + offset));
+		    }
+		  }
+
+		  vec temp;
+
+		  t25(0, 1,			3, 4,		2, 4,		2, 3,		6, 7);
+		  t25(5, 7,			5, 6,		9, 7,		1, 7,		1, 4);
+		  t25(12, 13,		11, 13,		11, 12,		15, 16,		14, 16);
+		  t25(14, 15,		18, 19,		17, 19,		17, 18,		21, 22);
+		  t25(20, 22,		20, 21,		23, 24,		2, 5,		3, 6);
+		  t25(0, 6,			0, 3,		4, 7,		1, 7,		1, 4);
+		  t25(11, 14,		8, 14,		8, 11,		12, 15,		9, 15);
+		  t25(9, 12,		13, 16,		10, 16,		10, 13,		20, 23);
+		  t25(17, 23,		17, 20,		21, 24,		18, 24,		18, 21);
+		  t25(19, 22,		8, 17,		9, 18,		0, 18,		0, 9);
+		  t25(10, 19,		1, 19,		1, 10,		11, 20,		2, 20);
+		  t25(2, 11,		12, 21,		3, 21,		3, 12,		13, 22);
+		  t25(4, 22,		4, 13,		14, 23,		5, 23,		5, 14);
+		  t25(15, 24,		6, 24,		6, 15,		7, 16,		7, 19);
+		  t25(3, 11,		5, 17,		11, 17,		9, 17,		4, 10);
+		  t25(6, 12,		7, 14,		4, 6,		4, 7,		12, 14);
+		  t25(10, 14,		6, 7,		10, 12,		6, 10,		6, 17);
+		  t25(12, 17,		7, 17,		7, 10,		12, 18,		7, 12);
+		  t24(10, 18,		12, 20,		10, 20,		10, 12);
+
+		  //toVec(gl_FragColor) = v[12];
+		  vec medianValue = v[12];
+		  gl_FragColor = vec4(v[12]);
+		}
+	
+</script>
+	<style>
+		body {
+			font-family: Arial,sans-serif;
+			font-size: 12px;
+		}
+
+		#divColorScale {
+			text-align: center;
+		}
+
+
+		/* The Modal (background) */
+	   .modal {
+		 display: none; /* Hidden by default */
+		 position: fixed; /* Stay in place */
+		 z-index: 10000; /* Sit on top */
+		 padding-top: 200px; /* Location of the box */
+		 left: 0;
+		 top: 0;
+		 width: 100%; /* Full width */
+		 height: 100%; /* Full height */
+		 overflow: auto; /* Enable scroll if needed */
+		 background-color: rgb(0,0,0); /* Fallback color */
+		 background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+	   }
+
+	   /* Modal Content */
+	   .modal-content {
+		 background-color: #fefefe;
+		 margin: auto;
+		 padding: 20px;
+		 border: 1px solid #888;
+		 width: 80%;
+	   }
+
+	</style>
+</head>
+<body>
+
+	<!-- The Modal -->
+	<div id="myModal" class="modal">
+
+		<!-- Modal content -->
+		<div class="modal-content" style="font-size: 22px">
+			<span class="close">&times;</span>
+				<p><span id="modalText1">Doing great! Feel free to take a moment to rest your eyes if you wish.</span> </p>
+				<p id="modalText2">There are <span>Num</span> sets left.</p>
+		</div>
+	</div>
+
+	<div style="width: 900px">
+
+		<div id="prompt" style="font-size: 19px">
+			<p>Progress: <span id="stimulusNum"></span>
+			<p>Click on the image that <b>doesn't belong</b>. Alternatively, select <b>"no discernible difference"</b> if you think the images are indistinguishable from each other.
+		</div>
+
+		<div style="width: 900px; height: 450px; margin-top: 40px">
+			<div style="float: left;">
+				<table style="margin-left: 50px" id="lineupTable"></table>
+			</div>
+			<div id="divColorScale" style="width: 90px; height: 210px; float: right;">
+				<div style="margin-top: 140px; font-size: 16px">
+					color<br>scale<br><canvas id="colorScaleCanvas" width="25" height="140"></canvas><br><!--low<br>values-->
+				</div>
+			</div>
+
+		</div>
+
+		<div id="correct" style="visibility: hidden; font-size: 19px; margin-left: 300px">Correct!</div>
+		<p id="confirm" style="visibility: hidden">Press <b>ENTER</b> to confirm selection.</p>
+	</div>
+
+
+	<!--
+		<p><button id="downloadData" style="font-size: 17px; visibility: hidden" onclick="downloadCSV()">Download data</button></p>
+	-->
+	<script type="text/javascript">
+		var modal = document.getElementById("myModal");
+
+		// Get the <span> element that closes the modal
+		var span = document.getElementsByClassName("close")[0];
+
+		function displayModal() {
+			modal.style.display = "block";
+		}
+		var _modalCallback = null;
+		function setModalCallback(_callback) {
+			_modalCallback = _callback;
+		}
+
+		// When the user clicks on <span> (x), close the modal
+		span.onclick = function() {
+			var originalDisplay = modal.style.display;
+			modal.style.display = "none";
+			if (originalDisplay == 'block') {
+				console.log("close modal");
+				if (_modalCallback) {
+					_modalCallback();
+				}
+			}
+		}
+
+		// When the user clicks anywhere outside of the modal, close it
+		window.onclick = function(event)
+		{
+		  if (event.target == modal)
+		  {
+			var originalDisplay = modal.style.display;
+			modal.style.display = "none";
+			if (originalDisplay == 'block') {
+				console.log("close modal");
+				if (_modalCallback) {
+					_modalCallback();
+				}
+			}
+		  }
+		}
+
+	</script>
+
+
+
+	<script>
+		var WIDTH=200;
+		var HEIGHT=200;
+		var TRAINING = true;
+
+		var SAMPLE_FIDELITY=14000;
+		var N = SAMPLE_FIDELITY;
+		var LINEUP_N = 4;
+
+		var shaderList = [
+			{name: 'pdfSample', path: 'design/src/shaders/pdfSample.glsl'},
+		
+
+			{name: 'visWithMax',		path: 'design/src/shaders/visWithMax.frag'},
+			//{name: 'vertex',	path: 'design/src/shaders/vertex.vert'},
+		
+			{name: 'blurOff',   path: 'design/src/shaders/blur7Offscreen.frag'},
+		];
+
+		var ENABLE_NO_DECOY = true;
+
+		var ALL_COLORMAPS = [
+
+			/*
+			'singlehue',
+			'viridis',
+			'spectral',
+			'coolwarm',
+			'turbo',
+			'rainbowjet',
+			*/
+
+			'blues',
+			'purples',
+			'reds',
+
+			'redpurple',
+			'viridis',
+			'plasma',
+
+			'coolwarm',
+			'greyred',
+			'spectral',
+
+			'rainbowjet',
+			'turbo',
+			'rainbowcie'
+		];
+
+		var COMBINATION = 'aehk';
+		var RANDOMIZE_COLOR_ORDER = true;
+		var BLOCK_SEED = [
+
+			/*
+			{ center: 0.030, correlation: 0.07, expectation: 0.110, std: 0.02},
+			
+			{ center: 0.040, correlation: 0.07, expectation: 0.130, std: 0.04},
+			{ center: 0.050, correlation: 0.07, expectation: 0.160, std: 0.04},
+			{ center: 0.060, correlation: 0.07, expectation: 0.190, std: 0.04},
+			{ center: 0.070, correlation: 0.07, expectation: 0.210, std: 0.04},
+			{ center: 0.080, correlation: 0.07, expectation: 0.230, std: 0.04},
+			//{ center: 0.090, correlation: 0.07, expectation: 0.240, std: 0.04},
+			*/
+			//{ center: 0.100, correlation: 0.07, expectation: 0.260, std: 0.04},
+			//{ center: 0.060, correlation: 0.07, expectation: 0.190, std: 0.04},
+			{ center: 0.070, correlation: 0.07, expectation: 0.210, std: 0.04},
+			{ center: 0.080, correlation: 0.07, expectation: 0.230, std: 0.04},
+			{ center: 0.090, correlation: 0.07, expectation: 0.240, std: 0.04},
+			{ center: 0.100, correlation: 0.07, expectation: 0.260, std: 0.04},
+
+			/*
+			//{ center: 0.110, correlation: 0.07, expectation: 0.270, std: 0.04},
+			{ center: 0.120, correlation: 0.07, expectation: 0.285, std: 0.05},
+			{ center: 0.130, correlation: 0.07, expectation: 0.300, std: 0.05},
+			{ center: 0.140, correlation: 0.07, expectation: 0.320, std: 0.05},
+			{ center: 0.165, correlation: 0.07, expectation: 0.340, std: 0.05},
+			*/
+		];
+		var trialPerSubblock = 6;
+
+		// create lineup experiment
+		var lineup = new LineupExperiment(WIDTH, HEIGHT, LINEUP_N, null, null, ENABLE_NO_DECOY);
+		lineup.enableSelection(true);
+		var correct = false;
+
+		// store results
+		var csv = [];
+		var stimulusCount = 0;
+		var subjectid = Math.floor(Math.random()*10000);
+
+		// experiment structure
+		// =====================
+		var trialPerBlock = 5;
+		var engagementPerBlock = 2;
+
+		// preset blocks
+		var blocks = [
+			{ colormap: 'viridis', center: 0.12, correlation: 0.07, expectation: 0.28},
+			{ colormap: 'turbo', center: 0.12, correlation: 0.07, expectation: 0.28},
+			{ colormap: 'viridis', center: 0.07, correlation: 0.07, expectation: 0.22},
+			{ colormap: 'turbo', center: 0.07, correlation: 0.07, expectation: 0.22}
+		];
+		var ENGAGEMENT = {
+			center: 0.24,
+			correlation: 0.08,
+			expectation: [0.36, 0.6]
+		}
+
+		// experiment stats
+		// ================
+		var engagementCorrect = 0;
+		var stimulusCorrect = 0;
+
+		// current status
+		// ==============
+		var trialNum = -1, blockNum = -1, engagementNum = 0;
+		var currentColormap = null;
+		var distance = null;
+		BLUR = false;
+
+		// flag on whether experiment is complete
+		var complete = false;
+		var wasIncorrect = false;
+
+		var EXPERIMENT_URL = 'experiment_null.html';
+		var DATA_URL = 'php/experimental_data_null.php';
+
+		function nextBlock()
+		{
+			blockNum++;
+			engagementNum = 0;
+
+			if (blockNum >= blocks.length)
+			{
+				complete = true;
+				return true;
+			}
+			else {
+				trialNum = 0;
+				var block = blocks[blockNum];
+
+				M_PERTURB = block.center;
+				R_PERTURB = block.correlation;
+
+				var colormap = getColorPreset(block.colormap)
+				ScalarSample.setUniversalColormap(colormap);
+
+				// draw the current currentColormap
+				var scaleCanvas = d3.select("#colorScaleCanvas");
+				colormap.drawColorScale(
+					+scaleCanvas.attr('width'),
+					+scaleCanvas.attr('height'),
+					+scaleCanvas.attr('height'), 'vertical',
+					scaleCanvas.node());
+
+				return false;
+			}
+		}
+
+		function finish()
+		{
+			d3.select("#prompt").style('visibility', 'hidden');
+			d3.select('#lineupTable').style('visibility', 'hidden');
+
+			d3.select("#confirm")
+				.style('visibility', null)
+				.html(TRAINING ?
+					'Experiment complete!' :
+					'Experiment complete!'
+				);
+
+			sendData(undefined, function() 
+			{
+				if (!TRAINING) {
+					/*
+					d3.select("#confirm")
+						.html('Experiment complete. <a href="strategy.html">Click here</a> to continue.');
+					*/
+					//window.location.replace('strategy.html');
+				}
+				else
+				{
+					//d3.select("#confirm")
+					//	.html('Practice complete. <a href="debrief_null.html">Click here</a> to continue.');
+					//window.location.replace('debrief_null.html');
+				}
+			});
+			/*
+			d3.select("#downloadData")
+				.style("visibility", TRAINING ? 'hidden' : null);
+			*/
+		}
+
+		var stimulusReady = null, genTime;
+
+		function nextTrial()
+		{
+			wasIncorrect = false;
+			LINEUP_PADDING = 10;
+			if (complete) {
+				// do nothing
+				return true;
+			}
+			else {
+				// current block
+				var block = blocks[blockNum];
+
+				if (trialNum >= block.trialSequence.length-1)
+				{
+					if (nextBlock()) {
+						finish();
+						return true;
+					}
+					else
+					{
+						// display modal
+						var text2;
+						left = (blocks.length-1)-blockNum;
+						
+						if (blockNum>1) {
+							d3.select("#modalText1").html("Feel free to take a moment to rest if you prefer.");
+						}
+
+						if (left == 0)
+						{
+							d3.select("#modalText1").html("Almost finished. You may rest for a moment if you wish.");
+
+							text2 = "Only 1 set remaining";
+						}
+						else
+						{
+							text2 = "There are " + (1+left) + " sets remaining.";
+						}
+
+						d3.select("#modalText2").html(text2);
+						setModalCallback(function() {
+							stimulusReady = Date.now();
+						});
+						if (!TRAINING) {
+							displayModal();
+						}
+					}
+				}
+				else {
+					trialNum++;
+				}
+
+				block = blocks[blockNum];
+
+				genTime = Date.now();
+
+				// hide lineup temporarily while model/samples are being created
+				d3.select("#lineupTable").style('visibility', 'hidden');
+
+				// update status label
+				var stimPerBlock = trialPerBlock + engagementPerBlock;
+				var p = (trialNum + blockNum*stimPerBlock) /	(stimPerBlock*blocks.length)
+				var label = (trialNum+1 + blockNum*stimPerBlock) + " / " +
+				(stimPerBlock*blocks.length) + ' (' + Math.floor(.5+100*p) + '% complete)';
+				label = Math.floor(.5+100*p) + '% complete';
+				d3.select('#stimulusNum').html(label);
+
+				(function(_block, _trialNum) {
+					setTimeout(function()
+					{
+						var noDecoy = false;
+						if (_block.trialSequence[_trialNum] == 'e')
+						{
+							//console.log("engagement check");
+							M_PERTURB = ENGAGEMENT.center;
+							R_PERTURB = ENGAGEMENT.correlation;
+							lineup.modelWithExpectation(ENGAGEMENT.expectation);
+						}
+						else if (_block.trialSequence[_trialNum] == 'noDecoy')
+						{
+							lineup.randomModel();
+							noDecoy = true;
+
+						}
+						else if ( typeof block.trialSequence[_trialNum] === "object" )
+						{
+							var subblock = block.trialSequence[_trialNum]
+							M_PERTURB = subblock.center;
+							R_PERTURB = subblock.correlation;
+							distance = lineup.modelWithExpectation(subblock.expectation);
+							if (Math.abs(distance-subblock.expectation) > LINEUP_TOLERANCE) {
+								console.error("[" + csv.length + "]: exceeded tolerance, e:" + subblock.expectation + ", d: " + distance + ", itr: " + lineup.iterations + ', conv: ' + lineup.converged);
+							}
+							
+							else
+							{
+								//console.log("[" + csv.length + "]: e:" + subblock.expectation + ", d: " + distance + ", itr: " + lineup.iterations + ', gap: ' + Math.abs(distance-subblock.expectation));
+							}
+						}
+						else
+						{
+							M_PERTURB = _block.center;
+							R_PERTURB = _block.correlation;
+							distance = lineup.modelWithExpectation(_block.expectation);
+						}
+
+						// keep track of time needed to generate stimulus
+						lineup.randomLineup(SAMPLE_FIDELITY, d3.select("#lineupTable"), noDecoy);
+						genTime = Date.now() - genTime;
+
+						// force a min of 250 ms delay to clear our iconic memory
+						setTimeout(function()
+						{
+							// show lineup
+							d3.select("#lineupTable").style('visibility', null);
+
+							// keep track of time when stimulus is ultimately ready
+							stimulusReady = Date.now();
+						}, Math.max(0, 250-genTime));
+					}, 20);
+				})(block, trialNum);
+
+				return false;
+			}
+		}
+
+		function downloadCSV()
+		{
+			var output = "subjectid,responseid,blockNum,trialNum,colormap,distance,correct,responseTime,center,correlation,expdistance\n";
+			for (var i=0, len=csv.length; i<len; i++)
+			{
+				var d = csv[i];
+				var r =
+					subjectid + ',' +
+					(i+1) + ',' +
+					d.blockNum + ',' +
+					d.trialNum + ',' +
+					d.colormap + ',' +
+					d.distance + ',' +
+					d.correct + ',' +
+					d.responseTime + ',' +
+					d.center + ',' +
+					d.correlation + ',' +
+					d.expdistance;
+				output += r + (i==len-1 ? '' : "\n");
+			}
+			var csvContent = "data:text/csv;charset=utf-8," + output;
+			var encodedUri = encodeURI(csvContent);
+			window.open(encodedUri);
+
+			//return output;
+		}
+
+		String.prototype.replaceAt=function(index, replacement) {
+		    return this.substr(0, index) + replacement+ this.substr(index + replacement.length);
+		}
+
+		function createTrialSequence()
+		{
+			if (COMBINATION && COMBINATION.length > 0)
+			{
+				var combination = COMBINATION;
+				if (RANDOMIZE_COLOR_ORDER)
+				{
+					// randomize
+					for (var i=0; i<2000; i++)
+					{
+						var r1 = Math.floor(Math.random() * combination.length);
+						var r2 = Math.floor(Math.random() * combination.length);
+						if (r1 != r2) {
+							var c1 = combination.charAt(r1);
+							var c2 = combination.charAt(r2);
+							combination = combination.replaceAt(r1, c2);
+							combination = combination.replaceAt(r2, c1);
+						}
+					}
+				}
+				COMBINATION = combination;
+
+				// create colorCombination
+				var colorscales = [];
+				for (var i=0; i<COMBINATION.length; i++) {
+					var index = COMBINATION.charCodeAt(i) - 'a'.charCodeAt(0);
+					colorscales.push(ALL_COLORMAPS[index]);
+				}
+
+				// construct blocks
+				var generatedBlocks = [];
+				for (var c=0; c<colorscales.length; c++)
+				{
+					var block = {
+						colormap: colorscales[c],
+						trialSequence: []
+					};
+					for (var i=0; i<BLOCK_SEED.length; i++)
+					{
+						var seed = BLOCK_SEED[i];
+						for (var t=0; t<trialPerSubblock; t++)
+						{
+							var subblock = {
+								center: seed.center,
+								correlation: seed.correlation,
+								std: seed.std,
+								expectation: seed.expectation
+							};
+							if (ENABLE_NO_DECOY && t>=trialPerSubblock/2) {
+								subblock = 'noDecoy';
+							}
+							block.trialSequence.push(subblock);
+						}
+
+						// permutate randomize subblock?
+						for (var x=0; x<40000; x++) {
+							var r1 = Math.floor(Math.random() * block.trialSequence.length);
+							var r2 = Math.floor(Math.random() * block.trialSequence.length);
+							var t = block.trialSequence[r2];
+							block.trialSequence[r2] = block.trialSequence[r1];
+							block.trialSequence[r1] = t;
+						}
+					}
+					generatedBlocks.push(block);
+				}
+				blocks = generatedBlocks;
+				trialPerBlock = trialPerSubblock * BLOCK_SEED.length;
+			}
+
+			for (var b=0; b<blocks.length; b++)
+			{
+				var block = blocks[b];
+				if (!block.trialSequence) {
+					block.trialSequence = d3.range(trialPerBlock);
+					for (var i=0; i<trialPerBlock; i++) {
+						block.trialSequence[i] = 0;
+					}
+				}
+
+				for (var i=0; i<engagementPerBlock; i++) {
+					var r = Math.floor(Math.random()*trialPerBlock);
+					block.trialSequence.splice(r, 0, 'e');
+				}
+			}
+		}
+
+		function initExperiment()
+		{
+			// trial sequence
+			createTrialSequence();
+
+			function showConfirmPrompt() {
+				d3.select("#incorrect").style('visibility', 'hidden');
+				d3.select("#confirm").style('visibility', null);
+			}
+			lineup.setClickFeedback(showConfirmPrompt, showConfirmPrompt);
+
+			// keyboard events
+			d3.select(document).on('keydown', function()
+			{
+				if (complete) {
+					// do nothing
+					return;
+				}
+
+				if (d3.event.keyCode === 13)
+				{
+					// ENTER
+					if (lineup.answer == null || lineup.answer == undefined)
+					{
+						// do nothing
+						return;
+					}
+					else if (lineup.answer == '0' && TRAINING)
+					{
+						d3.select("#incorrect").style('visibility', null);
+						d3.select("#confirm").style('visibility', 'hidden');
+						wasIncorrect = true;
+						flashAnswer();
+					}
+					else {
+
+						if (TRAINING && !wasIncorrect) {
+							d3.select("#correct").style('visibility', null);
+							setTimeout(function() {
+								d3.select("#correct").style('visibility', 'hidden')
+							}, 800);
+						}
+
+						// register response
+						var b = blocks[blockNum];
+
+						if (b.trialSequence[trialNum] == 'e')
+						{
+							// an engagement check. don't store, just check correctness
+							engagementCorrect += +lineup.answer;
+							engagementNum++;
+						}
+						else {							
+							var noDecoy = false;
+							var colormap = b.colormap;
+							if (typeof b.trialSequence[trialNum] == 'object')
+							{
+								b = b.trialSequence[trialNum];								
+							}
+							else if (b.trialSequence[trialNum] == 'noDecoy')
+							{
+								noDecoy = true;
+							}
+
+							if (trialNum - engagementNum == trialPerBlock * BLOCK_SEED.length-1) {
+								//console.log("lastTrial")
+							}
+
+							if (!noDecoy && typeof lineup.getCurExpectation() == 'object') {
+								console.error("expectation is not number: " + lineup.getCurExpectation());
+							}
+
+							var stimNum = csv.length+1
+							csv.push({
+								blockNum: blockNum+1,
+								trialNum: trialNum+1 - engagementNum,
+								stimulusNum: stimNum,
+								colormap: colormap,
+								hasDecoy: noDecoy ? 0 : 1,
+								distance: noDecoy ? 0.0 : lineup.getCurDistance(),
+								requestedDistance: noDecoy ? 0.0 : lineup.getCurExpectation(),
+								correct: +lineup.answer,
+								selection: +lineup.canvasIndex + 1,
+								generationTime: genTime,
+								converged: lineup.converged,
+								iterations: lineup.iterations,
+								responseTime: Date.now()-stimulusReady,
+								decoyModel: noDecoy ? 0 : 1,
+								center: !noDecoy ? b.center : 0.0,
+								correlation: !noDecoy ? b.correlation : 0.0,
+								expdistance: noDecoy ? 0.0 : lineup.getCurExpectation()
+							});
+							stimulusCorrect += +lineup.answer;
+							lineup.answer = null;
+
+						}
+
+						d3.select("#confirm").style('visibility', 'hidden');
+						d3.select("#incorrect").style('visibility', 'hidden');
+						nextTrial();
+
+					}
+				}
+			});
+
+			nextBlock();
+			trialNum = -1;
+			nextTrial();
+		}
+
+		var flashSeq = 0, FLASH_RATE=80;
+
+		function checkData()
+		{
+			var b = 0; t=0; tMap = {}, fMap = {};
+			for (var i=0; i<csv.length; i++)
+			{
+				var record = csv[i];
+				
+				if (!record.decoyModel && blocks[b].trialSequence[t]!='e')
+				{
+					if (!fMap[record.colormap]) 
+					{
+						fMap[record.colormap] = 1;
+					}
+					else {
+						fMap[record.colormap]++;
+					}
+					record.trialNum = fMap[record.colormap];
+					console.log("[" + i + "]: noDecoy, trialNum: " + record.trialNum);
+				}
+				
+				else if (typeof record.requestedDistance == 'object')
+				{
+					console.log("[" + i + "]: engagement: " + record.requestedDistance);
+				}
+				else
+				{
+					console.log("[" + i + "]: else ");
+					var d = Math.abs(record.distance - record.requestedDistance)
+					if (d > LINEUP_TOLERANCE) {
+						console.log("[" + i + "]: gap exceeds limit. expD: " + record.requestedDistance + ", gap: " + Math.abs(record.distance - record.requestedDistance));
+					
+					}
+					
+					// test and compare against the block seeds
+					var seq = blocks[b].trialSequence;
+					
+					while (seq[t]=='e') 
+					{
+						// skip over engagement checks
+						t++;
+					}
+					
+					
+					if (seq[t].expectation != record.requestedDistance)
+					{
+						console.log("[" + i + "]: inconsistent, seq[" + t + "]: " + seq[t].expectation + ', data: ' + record.requestedDistance);
+					}
+
+					var strMap = "" + record.requestedDistance;
+					var rMap = tMap[strMap];
+					if (!rMap) 
+					{
+						tMap[strMap] = 1;
+					}
+					else
+					{
+						tMap[strMap] = rMap + 1;
+					}
+					record.trialNum = tMap[strMap];
+				}
+
+				t++;
+				if (t >= blocks[b].trialSequence.length) 
+				{
+					b++; 
+					t=0; 
+					tMap = {};
+				}
+			}
+
+			for (var b=0, I=0; b<blocks.length; b++) 
+			{
+				var seq = blocks[b].trialSequence;
+				for (var j=0; j<seq.length; j++) 
+				{
+					if (seq[j] == 'noDecoy')
+					{
+						//console.log('I: ' + I + " has noDecoy. correct: " + csv[I].correct);
+						if (csv[I].decoyModel) {
+							console.log('inconsistent at noDecoy v. nullModel status ' + I)
+						}
+					}
+					else if (seq[j]=='e') {
+						continue;
+					}
+					I++;
+				}
+			}
+		}
+
+
+		function flashAnswer()
+		{
+			function flashTimeout() {
+				flashSeq++;
+				if (flashSeq % 2 == 0) {
+					lineup.highlightCorrect(true);
+				}
+				else {
+					lineup.highlightCorrect(false);
+				}
+				if (flashSeq < 4) {
+					setTimeout(flashTimeout, FLASH_RATE);
+				}
+			}
+
+			flashSeq = 0;
+			lineup.highlightCorrect(true);
+			setTimeout(flashTimeout, FLASH_RATE);
+		}
+
+		var dataPacket = null;
+		function sendData(TRIALS, callback)
+		{
+			var blockCount = blocks.length;
+
+			checkData();
+			
+			dataPacket =
+			{
+				experimentalData: csv,
+				engagementCorrect: engagementCorrect,
+				engagementTotal: engagementPerBlock * blockCount,
+				engagementAccuracy: engagementPerBlock > 0 ? (engagementCorrect / (blockCount * engagementPerBlock)) : 0.0,
+
+				stimulusCorrect: stimulusCorrect,
+				stimulusTotal: blockCount * trialPerBlock,
+				stimulusAccuracy: stimulusCorrect / (blockCount * trialPerBlock)
+			};
+			var data2send = JSON.stringify(dataPacket);
+
+			console.log("data2send size: " + data2send.length);
+
+			(function(experiment, trial, _data2send, _callback) {
+				$.ajax({
+					type: "POST",
+					url: DATA_URL,
+
+					data: _data2send,
+					dataType: "json",
+					contentType: "application/json; charset=utf-8",
+
+					success: function(data)
+					{
+						console.log("sendData SUCCESS");
+						_callback(true);
+					},
+
+					error: function(errMsg)
+					{
+						console.log("sendData failed: " + errMsg);
+						console.log("trials left: " + (trial));
+						if (trial > 0) {
+							experiment.sendData(trial-1, _callback);
+						}
+						else
+						{
+							_callback(false);
+						}
+					}
+				});
+				//console.log("send complete");
+			})(this, TRIALS != undefined ? TRIALS : 3, data2send, callback);
+		}
+
+		// set periodic timeout to poll heartbeat
+		function heartbeat()
+		{
+			setTimeout(function() {
+				
+				$.post('php/heartbeat.php', {
+					totalComplete: csv.length+1,
+					totalAll: blocks.length * (trialPerBlock + engagementPerBlock)
+				}, function(data, status) {
+					//console.log("heartbeat: " + data + ", status: " + status);
+				});
+				
+				heartbeat();			
+			}, 15*1000);
+		}
+
+		initExperiment();
+
+
+	</script>
+</body>
+</html>

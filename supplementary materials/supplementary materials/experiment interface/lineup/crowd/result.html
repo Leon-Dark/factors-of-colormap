@@ -1,0 +1,1656 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Color cat score 调试示例</title>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+  <script src="https://d3js.org/d3-queue.v3.min.js"></script>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <script src="https://d3js.org/d3-axis.v1.min.js"></script>
+  <script src="https://d3js.org/d3-fetch.v1.min.js"></script>
+
+  <script src="../../design/lib/d3-interpolate.v1.min.js"></script>
+  <script src="../../design/lib/d3-cam02.js"></script>
+  
+  <script src="../../src/scalar.js"></script>
+  <script src="../../design/src/colormap.js"></script>
+  <script src="../../design/src/gl_pipeline.js"></script>
+  <script src="../../design/src/coloranalysis.js"></script>
+  <script src="../../design/lib/d3.color.min.js"></script>
+  <script src="../../design/src/scalarvis.js"></script>
+  <script src="../../jnd/lib/three.min.js"></script>
+  <script src="../../src/perlin.js"></script>
+  <script src="../../src/noisegen.js"></script>
+
+  <script src="../../design/lib/c3.js"></script>
+  <script src="../../design/lib/c3_data.js"></script>
+  <script src="../../design/src/generateStimuli.js"></script>
+
+
+  <style>
+    body { font-family: sans-serif; }
+    #result p { margin: 5px 0; }
+  </style>
+</head>
+<body>
+	<h2>Color cat score 调试示例</h2>
+	<div id="result"></div>
+	<button id="downloadBtn">点击下载结果CSV</button>
+	<div id="metricsTable"></div>
+	<script type="text/javascript">
+    // 请确保以下函数在你的环境中已正确定义：
+    // getColorNameIndex, getNameDifference, ,
+    // getInterpolateValues, gamutMappingHCL, d3.rgb(), c3.color.entropy, 以及 c3.terms 等
+    
+   				 function nameSalience(c) {
+					var minE = -4.5;
+					var maxE = 0.0;
+					var i = getColorNameIndex(c);
+					var ent = c3.color.entropy(i);
+					return (ent - minE) / (maxE - minE);
+				}
+		
+				// 计算 HCL 空间中两个颜色之间的欧式距离
+				function hclDistance(c1, c2) {
+					var d = Math.pow(c1.h - c2.h, 2) + Math.pow(c1.c - c2.c, 2) + Math.pow(c1.l - c2.l, 2);
+					return Math.sqrt(d);
+				}
+				
+
+				// 计算颜色名称分布，依赖 c3.terms 和 getColorNameIndex 函数
+				function termDistribution(c) {
+					var i = getColorNameIndex(c); // 请确保实现该函数
+					var terms = c3.terms;
+					var dist = [];
+					for (var w = 0; w < terms.length; w++) {
+						dist.push({
+							term: terms[w],
+							p: c3.terms.prob(w, i)
+						});
+					}
+					dist.sort(function(a, b) { return b.p - a.p; });
+					return dist;
+				}
+
+				function findMeanStd(colors) 
+		{
+				var meanJab = d3.jab(0, 0, 0);
+
+				var mean = {
+					l: 0, a: 0, b: 0
+				};
+				var std = 0;
+
+				for (var i=0; i<colors.length; i++) 
+				{
+					var c = colors[i];
+					mean.l += c.l;
+					mean.a += c.a;
+					mean.b += c.b;
+
+					var cJab = d3.jab(c);
+					meanJab.J += cJab.J;
+					meanJab.a += cJab.a;
+					meanJab.b += cJab.b;
+						
+				}
+
+				if (colors.length > 0) 
+				{
+					var k = 1/colors.length;
+					mean.l *= k;
+					mean.a *= k;
+					mean.b *= k;
+
+					meanJab.J *= k;
+					meanJab.a *= k;
+					meanJab.b *= k;
+
+				}
+				mean.L = mean.l;
+
+				for (var i=0; i<colors.length; i++) {
+					var c = colors[i];
+					var d = Math.pow(c.l - mean.l, 2) + Math.pow(c.a - mean.a, 2) + Math.pow(c.b - mean.b, 2);
+					std += d;
+				}
+				if (colors.length > 0) {
+					std *= 1/colors.length;
+				}
+				return {
+					mean: d3.hcl(mean.l, mean.c, mean.h), 
+					std: Math.sqrt(std)
+				};
+		}
+	
+				// 计算相邻颜色名称的差异，依赖 getNameDifference 函数
+				function localNameDistances(colors) {
+					var nameDistances = [];
+					for (var i = 0; i < colors.length - 1; i++) {
+						var c0 = colors[i];
+						var c1 = colors[i + 1];
+						var d = getNameDifference(c0, c1); // 请确保实现该函数
+						nameDistances.push(d);
+					}
+					return nameDistances;
+				}
+		
+
+				var BAND_SAMPLES = 100;
+				var BAND_CLUSTERING_COEFFICIENT = .55;
+		
+				function clusterBands(colormap) {
+			// 辅助函数：在数组中从 start 开始找最小值的索引
+					function findMinIndex(arr, start) {
+						var m = arr[start];
+						var i = start;
+						for (var j = start + 1; j < arr.length; j++) {
+							if (m > arr[j]) {
+								m = arr[j];
+								i = j;
+							}
+						}
+						return i;
+					}
+					//console.log(colormap);
+					var maxNameDistance = BAND_CLUSTERING_COEFFICIENT;
+					var SMALL_CLUSTER = Math.floor(0.5 + 0.015 * BAND_SAMPLES);
+					var samples = colormap.sampleRamp(BAND_SAMPLES);
+					samples = Array.from(samples);
+					//console.log(samples);
+					// 初始时计算相邻色彩名称差异
+					var distances = localNameDistances(samples);
+					var clusters = [];
+					var clusterID = 0;
+					for (var i = 0, len = samples.length; i < samples.length; i++) {
+						var x = i / len + 0.5 * (1 / len);
+						let YY=JSON.stringify(samples[i]);
+						let xx=JSON.stringify(d3.hcl(samples[i]));
+						////console.log(YY,xx);
+						clusters.push({
+							x: x,
+							mean: d3.hcl(samples[i]),
+							std: 999999,
+							stdErr: 999999,
+							centroid: d3.hcl(samples[i]),
+							members: [d3.hcl(samples[i])],
+							level: 0,
+							children: null,
+							id: clusterID++,
+							e: i === 0 ? [0, 0] : i === samples.length - 1 ? [1, 1] : [x, x]
+						});
+					}
+					
+					
+					
+					while (clusters.length > 1) {
+						var i0, i1, c0, c1, cD;
+						var start = 0;
+						var merged = false;
+						while (!merged && start < distances.length) {
+							i0 = findMinIndex(distances, start);
+							i1 = i0 + 1;
+							c0 = clusters[i0];
+							c1 = clusters[i1];
+							if (c0 === undefined || c1 === undefined) {
+								continue;
+							}
+							// 计算两个色带中心的名称差异
+							var nameD = getNameDifference(c0.centroid, c1.centroid); // 请确保实现该函数
+							//console.log(nameD);
+							// 根据色带成员数量调整阈值
+							var m = Math.max(c0.members.length, c1.members.length) / BAND_SAMPLES;
+							var iNameDistance = m * (-maxNameDistance) + maxNameDistance;
+							if (nameD <= maxNameDistance) {
+								merged = true;
+								cD = nameD;
+							} else {
+								start = i0 + 1;
+							}
+						}
+						if (!merged) {
+							// 合并较小的色带
+							for (var j = 0; j < clusters.length; j++) {
+								if (clusters[j].members.length < SMALL_CLUSTER) {
+									var prevDistance = (j === 0 ? Number.MAX_VALUE : distances[j - 1]);
+									if (prevDistance < distances[j] || j === clusters.length - 1) {
+										i0 = j - 1;
+										i1 = j;
+										c0 = clusters[j - 1];
+										c1 = clusters[j];
+										cD = prevDistance;
+									} else {
+										i0 = j;
+										i1 = j + 1;
+										c0 = clusters[j];
+										c1 = clusters[j + 1];
+										cD = distances[j];
+									}
+									merged = true;
+									break;
+								}
+							}
+							if (!merged) {
+								break;
+							}
+						}
+						var newC = {
+							members: c0.members.splice(0),
+							level: Math.max(c0.level, c1.level) + 1,
+							children: [c0, c1],
+							id: clusterID++
+						};
+						c0.parent = newC;
+						c1.parent = newC;
+						// 合并两个色带的成员
+						for (var j = 0; j < c1.members.length; j++) {
+							newC.members.push(c1.members[j]);
+						}
+						newC.x = (c0.x + c1.x) * 0.5;
+						newC.e = [
+							Math.min(c0.e[0], c1.e[0]),
+							Math.max(c0.e[1], c1.e[1])
+						];
+						// 选择最具“命名重要性”的颜色作为新色带中心
+						var maxSalience = Number.MIN_VALUE;
+						var maxSalienceI = -1;
+						var mostSalient = null;
+						for (var j = 0; j < newC.members.length; j++) {
+							var c = newC.members[j];
+							var salience = nameSalience(c);
+							if (maxSalience < salience) {
+								maxSalience = salience;
+								maxSalienceI = j;
+								mostSalient = c;
+							}
+						}
+						var mean_s = findMeanStd(newC.members);
+						newC.mean = mean_s.mean;
+						newC.distance = cD;
+						newC.proto = newC.members[maxSalienceI];
+						newC.centroid = mostSalient;
+						newC.term = termDistribution(newC.centroid)[0];
+						
+						if (i0 >= 1) {
+							distances[i0 - 1] = getNameDifference(newC.centroid, clusters[i0 - 1].centroid);
+						}
+						var newD = undefined;
+						if (i1 + 1 < clusters.length) {
+							newD = getNameDifference(newC.centroid, clusters[i1 + 1].centroid);
+						}
+						clusters.splice(i0, 2, newC);
+						if (newD === undefined) {
+							distances.splice(i0, 2);
+						} else {
+							distances.splice(i0, 2, newD);
+						}
+					}
+					// 添加左右引用
+					for (var i = 0; i < clusters.length; i++) {
+						var c = clusters[i];
+						if (i > 0) c.left = clusters[i - 1];
+						if (i < clusters.length - 1) c.right = clusters[i + 1];
+					}
+					return clusters;
+				}
+		
+				var DENDOGRAM_H = 5;
+				
+				var minGlobalD = Number.MAX_VALUE, maxGlobalD = Number.MIN_VALUE;
+				function computeBandingScore(bands, svg)
+					{
+						if (bands.length < 2) return 0;
+						var distinctiveness = 0, count = 0, pairwise = [], minD = Number.MAX_VALUE, maxD = Number.MIN_VALUE;
+						for (var i = 1; i < bands.length; i++) {
+							var row = [];
+							for (var j = 0; j < i; j++, count++) {
+								var d = hclDistance(bands[i].centroid, bands[j].centroid);
+								let ddd = JSON.stringify(bands[i].centroid) + "," + JSON.stringify(bands[j].centroid) + "," + d;
+								//console.log(ddd)
+									
+								distinctiveness += d;
+								row.push(d);
+								maxD = Math.max(maxD, d);
+								minD = Math.min(minD, d);
+							}
+							pairwise.push(row);
+						}
+						distinctiveness /= count;
+						var bandingScore = distinctiveness * bands.length;
+						minGlobalD = Math.min(minGlobalD, minD);
+						maxGlobalD = Math.max(maxGlobalD, maxD);
+						
+						
+						if (svg) {
+							svg.selectAll("*").remove();
+							var R = 20;
+							var R_PAD=0;
+							var I_PAD1=3;
+							var I_PAD2=0;
+
+							var cmap = getColorPreset('Hue-0 with Wave-9');
+							svg.selectAll('rect').data(bands).enter().append('rect')
+								.attr('width', R - I_PAD1*2)
+								.attr('height', R - I_PAD1*2)
+								.attr('x', function(d,i) { return i*(R+R_PAD) + I_PAD1})
+								.attr('y', function(d,i) { return i*(R+R_PAD) + I_PAD1})
+								.style('fill', function(d) { 
+									var c = d.centroid; 
+									return c;
+								})
+								.style('stroke', 'black')
+								.style('stroke-width', '0.5px')
+							var g = svg.selectAll('g').data(pairwise).enter().append('g')
+								.attr('class', 'rows')
+								.attr('transform', function(d, i) { return 'translate(0,' + (i+1)*(R+R_PAD) + ')'});
+							
+							g.each(function(d) {
+								d3.select(this).selectAll('rect.distance').data(d).enter().append('rect')
+									.attr('x', function(d,i) { return i*(R+R_PAD)+I_PAD2 })
+									.attr('y', I_PAD2)
+									.attr('width', R - 2*I_PAD2)
+									.attr('height', R - 2*I_PAD2)
+									.style('fill', function(d) {
+										var c= cmap.mapValue(1- ( (d-minGlobalD) / (maxGlobalD-minGlobalD))); 
+										return c;
+									})
+							})
+
+
+						}
+
+						return bandingScore;
+
+					}
+	
+				var curColormap = null;
+				var resBands = null;
+
+
+  
+function optimizingLuminance(colormap, luminance) {
+
+// get control points
+let control_points = []
+for (let i = 0; i < luminance.length; i++) {
+let idx = Math.floor(i / (luminance.length - 1) * (colormap.length - 1))
+control_points.push(colormap[idx].slice())
+}
+// optimizing luminance of middle colors
+for (let i = 1; i < control_points.length - 1; i++) {
+let color = control_points[i]
+// if (color[2] > 30) continue
+for (let j = 0; j < 20; j++) {
+  let name = getColorName(d3.rgb(color[0], color[1], color[2])).slice(0, 3),
+      nd_black = getNameDifference(d3.lab(d3.rgb(color[0], color[1], color[2])), d3.lab(d3.rgb(0, 0, 0))),
+      nd_white = getNameDifference(d3.lab(d3.rgb(color[0], color[1], color[2])), d3.lab(d3.rgb(255, 255, 255)))
+  // //console.log(color, name, nd);
+  // if (name.every(item => item !== undefined && item.includes("black"))) {
+  //     break
+  // }
+  if (name.every(item => item !== undefined) && nd_black > 0.9 && nd_white > 0.9) {
+      // //console.log(color, name, nd);
+      break
+  }
+  if (nd_black < 0.9)
+      color[2] += 1
+  if (nd_white < 0.9)
+      color[2] -= 1
+  color[1] = gamutMappingHCL(color[0], 100, color[2])
+}
+}
+
+// make sure all middle colors have enough JND
+for (let i = 1; i < control_points.length - 1; i++) {
+for (let j = i + 1; j < control_points.length - 1; j++) {
+  for (let k = 0; k < 20; k++) {
+      let cd = d3_ciede2000(d3.lab(d3.rgb(control_points[i][0], control_points[i][1], control_points[i][2])), d3.lab(d3.rgb(control_points[j][0], control_points[j][1], control_points[j][2])))
+      if (cd > 6) {
+          break
+      }
+      if (control_points[j][2] < 40 && control_points[i][2] < 40) {
+          if (control_points[j][2] < 40) {
+              control_points[j][2] += 1
+              control_points[j][1] = gamutMappingHCL(control_points[j][0], 100, control_points[j][2])
+          } else if (control_points[i][2] < 40) {
+              control_points[i][2] += 1
+              control_points[i][1] = gamutMappingHCL(control_points[i][0], 100, control_points[i][2])
+          }
+      }
+      if (control_points[j][2] > 60 && control_points[i][2] > 60) {
+          if (control_points[i][2] > 60) {
+              control_points[i][2] -= 1
+              control_points[i][1] = gamutMappingHCL(control_points[i][0], 100, control_points[i][2])
+          } else if (control_points[j][2] > 60) {
+              control_points[j][2] -= 1
+              control_points[j][1] = gamutMappingHCL(control_points[j][0], 100, control_points[j][2])
+          }
+      }
+
+  }
+}
+}
+
+// re-interpolate colormap
+let step_num = Math.round(2000 / (control_points.length - 1)), interpolated_arr = []
+for (let i = 0; i < control_points.length - 1; i++) {
+for (let j = 0; j < step_num; j++) {
+  let v = control_points[i][0] + j / step_num * (control_points[i + 1][0] - control_points[i][0]),
+      v1 = control_points[i][1] + j / step_num * (control_points[i + 1][1] - control_points[i][1]),
+      v2 = control_points[i][2] + j / step_num * (control_points[i + 1][2] - control_points[i][2])
+  interpolated_arr.push([v, v1, v2])
+}
+}
+interpolated_arr.push(control_points[control_points.length - 1])
+// sample num colors
+let sampled_colormap = []
+for (let i = 0; i < colormap.length; i++) {
+let idx = Math.floor(i / (colormap.length - 1) * (interpolated_arr.length - 1))
+sampled_colormap.push(interpolated_arr[idx])
+}
+return sampled_colormap
+}
+function checkSimilarity(colormap) {
+    let sample_number = 16, sample_colors = []
+    for (let i = 0; i < sample_number; i++) {
+        let idx = Math.floor(i / (sample_number - 1) * (colormap.length - 1))
+        sample_colors.push(d3.lab(d3.hcl(colormap[idx][0], colormap[idx][1], colormap[idx][2])))
+    }
+    for (let i = 0; i < sample_colors.length; i++) {
+        for (let j = i + 1; j < sample_colors.length; j++) {
+            let cd = d3_ciede2000(sample_colors[i], sample_colors[j])
+            if (cd < 3) {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+function generateColormap(condition, currentOffsets, startIndex = 0) {
+  // condition 格式形如 "Hue-7 with Wave-2"，其中 Wave-2 对应 luminance 数组 [10,90,10]
+  var parts = condition.split(" with ");
+  if (parts.length !== 2) {
+    console.error("condition 格式错误：" + condition);
+    return;
+  }
+  var hueGroup = parts[0],
+      lumiType = parts[1],
+      used_hues = [0, 50, 100, 150, 200, 250, 300].slice().reverse(); // [300,250,200,150,100,50,0]
+
+  var numHues;
+  if (hueGroup.indexOf("Hue-7") !== -1) {
+    numHues = 7;
+  } else if (hueGroup.indexOf("Hue-5") !== -1) {
+    numHues = 5;
+  } else if (hueGroup.indexOf("Hue-3") !== -1) {
+    numHues = 3;
+  } else if (hueGroup.indexOf("Hue-0") !== -1) {
+    numHues = 0;
+  } else {
+    console.error("未知的 hueGroup: " + hueGroup);
+    return;
+  }
+
+  // 根据 numHues 生成对应的 hue 数组（先统一加上偏移，再截取固定长度）
+  var huesGroup;
+  if (numHues > 0) {
+    var offsetHues = used_hues.map(function(h) { return h + currentOffsets; });
+    if (numHues === 7) {
+      huesGroup = offsetHues.slice(); // 全部 7 个
+    } else if (numHues === 5) {
+      var validStart = Math.min(Math.max(startIndex, 0), used_hues.length - 5);
+      huesGroup = offsetHues.slice(validStart, validStart + 5);
+    } else if (numHues === 3) {
+      var validStart = Math.min(Math.max(startIndex, 0), used_hues.length - 3);
+      huesGroup = offsetHues.slice(validStart, validStart + 3);
+    }
+  } else {
+    // Hue-0 直接生成灰度色带，忽略偏移
+    huesGroup = [0];
+  }
+
+  // luminance 数组映射，保证与 generateStimuli 中的定义一致
+  var lumiArrayMapping = {
+    "Wave-0": [70, 70],
+    "Wave-1": [10, 90],
+    "Wave-2": [10, 90, 10],
+    "Wave-3": [10, 90, 10, 90],
+    "Wave-4": [10, 90, 10, 90, 10],
+    "Wave-5": [10, 90, 10, 90, 10, 90],
+    "Wave-6": [10, 90, 10, 90, 10, 90, 10],
+    "Wave-7": [10, 90, 10, 90, 10, 90, 10, 90],
+    "Wave-8": [10, 90, 10, 90, 10, 90, 10, 90, 10],
+    "Wave-9": [10, 90, 10, 90, 10, 90, 10, 90, 10, 90]
+  };
+  var lumiArray = lumiArrayMapping[lumiType];
+  if (!lumiArray) {
+    console.error("未知的 luminance 类型: " + lumiType);
+    return;
+  }
+
+  var sample_number = 500;
+  let lumi = getInterpolateValues(lumiArray, sample_number);
+
+  // 如果是 Hue-0，直接返回纯灰色色带，与 generateStimuli 保持一致
+  if (numHues === 0) {
+    var grayColors = lumi.map(function(l) { return [0, 0, l]; });
+    return { colors: grayColors, offset: 0 };
+  }
+
+  // 对原始的 huesGroup 进行插值，生成长度为 sample_number 的 hue 序列
+  var huesInterpolated = getInterpolateValues(huesGroup, sample_number);
+
+  // 根据 generateStimuli 的方式：先计算原始 huesGroup 对应的 chroma 数组，
+  // 其中每个 chroma 值 c 的计算为：c = gamutMappingHCL(原始 hue, 100, luminance[对应索引])
+  var chroma_array_original = [];
+  for (var k = 0; k < huesGroup.length; k++) {
+    var idx;
+    if (huesGroup.length === 1) {
+      idx = 0;
+    } else {
+      idx = Math.floor(k / (huesGroup.length - 1) * (lumi.length - 1));
+    }
+    var c = gamutMappingHCL(huesGroup[k], 100, lumi[idx]);
+    chroma_array_original.push(c);
+  }
+  // 对 chroma_array_original 进行插值
+  var chromaInterpolated = getInterpolateValues(chroma_array_original, sample_number);
+
+  // 组合生成最终的 colors 数组，每个元素形如 [hue, chroma, luminance]
+  var colors = [];
+  for (var k = 0; k < sample_number; k++) {
+    colors.push([huesInterpolated[k], chromaInterpolated[k], lumi[k]]);
+  }
+
+  // 如果 luminance 数组长度大于 3（即 j>2），调用亮度优化函数
+  if (lumiArray.length > 3) {
+    colors = optimizingLuminance(colors, lumiArray);
+  }
+
+  return { colors: colors, offset: currentOffsets };
+}
+function discriminatory_cie(colormap) {
+				// Check if colormap is valid
+				if (!colormap) {
+					console.error("Invalid colormap object:", colormap);
+					return 0; // Return a default value
+				}
+				
+				// Get standardized colors from the colormap
+				const colors = createStandardizedColormap(colormap);
+				
+				// Check if colors is valid
+				if (!colors || !colors.length) {
+					console.error("Invalid colors array:", colors);
+					return 0; // Return a default value
+				}
+				
+				// Calculate discriminative power
+				let totalSpeed = 0;
+				let pairCount = 0;
+				
+				for (let i = 0; i < colors.length; i++) {
+					for (let j = i + 1; j < colors.length; j++) {
+						// Create proper d3 rgb color objects first
+						const rgbColor1 = d3.rgb(colors[i].rgb[0], colors[i].rgb[1], colors[i].rgb[2]);
+						const rgbColor2 = d3.rgb(colors[j].rgb[0], colors[j].rgb[1], colors[j].rgb[2]);
+						// Then convert to LAB
+						const lab1 = d3.lab(rgbColor1);
+						const lab2 = d3.lab(rgbColor2);
+						const deltaE = d3_ciede2000(lab1, lab2);
+						// Calculate speed Vi,j (using normalized positions)
+						const v_ij = deltaE / Math.abs((j - i) / (colors.length - 1));
+						totalSpeed += v_ij;
+						pairCount++;
+					}
+				}
+				// for (let i = 0; i < colors.length - 1; i++) {
+				// 		// Create proper d3 rgb color objects first
+				// 		const rgbColor1 = d3.rgb(colors[i].rgb[0], colors[i].rgb[1], colors[i].rgb[2]);
+				// 		const rgbColor2 = d3.rgb(colors[i+1].rgb[0], colors[i+1].rgb[1], colors[i+1].rgb[2]);
+				// 		// Then convert to LAB
+				// 		const lab1 = d3.lab(rgbColor1);
+				// 		const lab2 = d3.lab(rgbColor2);
+				// 		const deltaE = d3_ciede2000(lab1, lab2);
+				// 		// Calculate speed Vi,j (using normalized positions)
+				// 		const v_ij = deltaE / Math.abs((i + 1 - i) / (colors.length - 1));
+				// 		totalSpeed += v_ij;
+				// 		pairCount++;
+					
+				// }
+				// Calculate global Discriminative Power
+				const globalDiscriminativePower = pairCount > 0 ? totalSpeed / pairCount : 0;
+				return globalDiscriminativePower;
+			}
+function computeDeltaE(L1, a1, b1, L2, a2, b2, wa = 0.1, wb = 0.1) {
+    // 检查输入参数是否有效
+    if (isNaN(L1) || isNaN(a1) || isNaN(b1) || isNaN(L2) || isNaN(a2) || isNaN(b2)) {
+        console.error("computeDeltaE收到无效参数:", { L1, a1, b1, L2, a2, b2 });
+        return 0; // 返回默认值而不是NaN
+    }
+    
+    let deltaL = L1 - L2;
+    let deltaA = a1 - a2;
+    let deltaB = b1 - b2;
+    
+    // 检查计算结果是否有效
+    if (isNaN(deltaL) || isNaN(deltaA) || isNaN(deltaB)) {
+        console.error("computeDeltaE计算差值出错:", { deltaL, deltaA, deltaB });
+        return 0;
+    }
+    
+    const result = Math.sqrt(
+        Math.pow(deltaL, 2) + 
+        wa * Math.pow(deltaA, 2) + 
+        wb * Math.pow(deltaB, 2)
+    );
+    
+    // 检查最终结果是否有效
+    if (isNaN(result)) {
+        console.error("computeDeltaE最终结果为NaN:", { 
+            deltaL_squared: Math.pow(deltaL, 2),
+            deltaA_squared_weighted: wa * Math.pow(deltaA, 2),
+            deltaB_squared_weighted: wb * Math.pow(deltaB, 2)
+        });
+        return 0;
+    }
+    
+    return result;
+}
+function discriminatory_contrast_sensitivity(colormap) {
+	// Check if colormap is valid
+	if (!colormap) {
+		console.error("Invalid colormap object:", colormap);
+		return 0; // Return a default value
+	}
+	
+	// Get standardized colors from the colormap
+	const colors = createStandardizedColormap(colormap);
+
+	// Check if colors is valid
+	if (!colors || !colors.length) {
+		console.error("Invalid colors array:", colors);
+		return 0; // Return a default value
+	}
+	
+	// Calculate discriminative power
+	let totalSpeed = 0;
+	let pairCount = 0;
+	
+	try {
+		for (let i = 0; i < colors.length; i++) {
+			for (let j = i + 1; j < colors.length; j++) {
+				try {
+					// 创建d3 rgb颜色对象
+					const rgbColor1 = d3.rgb(colors[i].rgb[0], colors[i].rgb[1], colors[i].rgb[2]);
+					const rgbColor2 = d3.rgb(colors[j].rgb[0], colors[j].rgb[1], colors[j].rgb[2]);
+					
+					// 检查RGB颜色是否有效
+					if (!rgbColor1 || !rgbColor2) {
+						console.warn(`跳过无效RGB颜色对: [${i}]=${JSON.stringify(colors[i].rgb)}, [${j}]=${JSON.stringify(colors[j].rgb)}`);
+						continue;
+					}
+					
+					// 转换为LAB
+					const lab1 = d3.lab(rgbColor1);
+					const lab2 = d3.lab(rgbColor2);
+					//console.log(`LAB颜色对: [${i}]=${JSON.stringify(lab1)}, [${j}]=${JSON.stringify(lab2)}`);
+					// 确保所有值都是数字
+					const l1 = Number(lab1.L);
+					const a1 = Number(lab1.a);
+					const b1 = Number(lab1.b);
+					const l2 = Number(lab2.L);
+					const a2 = Number(lab2.a);
+					const b2 = Number(lab2.b);
+					
+					const deltaE = computeDeltaE(l1, a1, b1, l2, a2, b2);
+					
+					// 检查deltaE是否有效
+					if (isNaN(deltaE)) {
+						console.warn(`计算deltaE结果无效: ${deltaE}`);
+						continue;
+					}
+					
+					// 计算速度Vi,j (使用归一化位置)
+					const normalizationFactor = Math.abs((j - i) / (colors.length - 1));
+					
+					// 避免除以零
+					if (normalizationFactor === 0) {
+						console.warn(`归一化因子为零，跳过计算: i=${i}, j=${j}`);
+						continue;
+					}
+					
+					const v_ij = deltaE / normalizationFactor;
+					
+					// 检查v_ij是否有效
+					if (isNaN(v_ij)) {
+						console.warn(`计算v_ij结果无效: ${v_ij}, deltaE=${deltaE}, normalizationFactor=${normalizationFactor}`);
+						continue;
+					}
+					
+					const contribution = 3.4 * Math.pow(v_ij, 0.879);
+					totalSpeed += contribution;
+					pairCount++;
+					
+				} catch (error) {
+					console.error(`处理颜色对[${i}, ${j}]时出错:`, error);
+				}
+			}
+		}
+		
+		// 计算全局Discriminative Power
+		const globalDiscriminativePower = pairCount > 0 ? totalSpeed / pairCount : 0;
+		//console.log("对比敏感度计算结果:", {totalSpeed, pairCount, globalDiscriminativePower});
+		return globalDiscriminativePower;
+	} catch (error) {
+		console.error("discriminatory_contrast_sensitivity函数执行出错:", error);
+		return 0; // 出错时返回默认值
+	}
+}
+function discriminatory_hue(colormap) {
+// Check if colormap is valid
+if (!colormap) {
+	console.error("Invalid colormap object:", colormap);
+	return 0; // Return a default value
+}
+
+// Get standardized colors from the colormap
+const colors = createStandardizedColormap(colormap);
+
+// Check if colors is valid
+if (!colors || !colors.length) {
+	console.error("Invalid colors array:", colors);
+	return 0; // Return a default value
+}
+
+// Calculate discriminative power using hue distance
+let totalSpeed = 0;
+let pairCount = 0;
+
+for (let i = 0; i < colors.length; i++) {
+	for (let j = i + 1; j < colors.length; j++) {
+		// Create proper d3 rgb color objects first
+		const rgbColor1 = d3.rgb(colors[i].rgb[0], colors[i].rgb[1], colors[i].rgb[2]);
+		const rgbColor2 = d3.rgb(colors[j].rgb[0], colors[j].rgb[1], colors[j].rgb[2]);
+		
+		// Convert to HSL to get hue values
+		const hcl1 = d3.hcl(rgbColor1);
+		const hcl2 = d3.hcl(rgbColor2);
+		
+		// Calculate hue distance (considering the circular nature of hue)
+		let hueDiff = Math.abs(hcl1.h - hcl2.h);
+		if (hueDiff > 180) {
+			hueDiff = 360 - hueDiff; // Take the shorter arc on the color wheel
+		}
+		
+		// Normalize to a 0-100 scale similar to CIEDE2000
+		const normalizedHueDiff = hueDiff;
+		
+		// Calculate speed Vi,j (using normalized positions)
+		const v_ij = normalizedHueDiff / Math.abs((j - i) / (colors.length - 1));
+		totalSpeed += v_ij;
+		pairCount++;
+	}
+}
+
+
+// for (let i = 0; i < colors.length - 1; i++) {
+	
+// 		// Create proper d3 rgb color objects first
+// 		const rgbColor1 = d3.rgb(colors[i].rgb[0], colors[i].rgb[1], colors[i].rgb[2]);
+// 		const rgbColor2 = d3.rgb(colors[i+1].rgb[0], colors[i+1].rgb[1], colors[i+1].rgb[2]);
+		
+// 		// Convert to HSL to get hue values
+// 		const hcl1 = d3.hcl(rgbColor1);
+// 		const hcl2 = d3.hcl(rgbColor2);
+		
+// 		// Calculate hue distance (considering the circular nature of hue)
+// 		let hueDiff = Math.abs(hcl1.h - hcl2.h);
+// 		if (hueDiff > 180) {
+// 			hueDiff = 360 - hueDiff; // Take the shorter arc on the color wheel
+// 		}
+		
+// 		// Normalize to a 0-100 scale similar to CIEDE2000
+// 		const normalizedHueDiff = hueDiff;
+		
+// 		// Calculate speed Vi,j (using normalized positions)
+// 		const v_ij = normalizedHueDiff / Math.abs((i + 1 - i) / (colors.length - 1));
+// 		totalSpeed += v_ij;
+// 		pairCount++;
+	
+// }
+
+
+// Calculate global Discriminative Power
+const globalDiscriminativePower = pairCount > 0 ? totalSpeed / pairCount : 0;
+return globalDiscriminativePower;
+}
+
+function luminance_variation(colormap) {
+// Check if colormap is valid
+if (!colormap) {
+	console.error("Invalid colormap object:", colormap);
+	return 0; // Return a default value
+}
+
+// Get standardized colors from the colormap
+const colors = createStandardizedColormap(colormap);
+
+// Check if colors is valid
+if (!colors || !colors.length) {
+	console.error("Invalid colors array:", colors);
+	return 0; // Return a default value
+}
+
+// Calculate luminance for each color
+const luminanceValues = [];
+for (let i = 0; i < colors.length; i++) {
+	// Create proper d3 rgb color object with error handling
+	try {
+		// Ensure rgb values are valid numbers
+		const r = parseInt(colors[i].rgb[0]);
+		const g = parseInt(colors[i].rgb[1]);
+		const b = parseInt(colors[i].rgb[2]);
+
+		if (isNaN(r) || isNaN(g) || isNaN(b)) {
+			console.error(`Invalid rgb values for color ${i}:`, colors[i].rgb);
+			continue; // Skip this color
+		}
+
+		const rgbColor = d3.rgb(r, g, b);
+
+		// Convert to LAB to get luminance (L component)
+		const hcl = d3.hcl(rgbColor);
+		////console.log(lab);
+		// The L component is the luminance
+		if (hcl && typeof hcl.l === 'number') {
+			luminanceValues.push(hcl.l);
+		} else {
+			console.error(`Invalid luminance for color ${i}:`, hcl);
+		}
+	} catch (error) {
+		console.error(`Error processing color ${i}:`, error);
+	}
+}
+
+// Check if we have valid luminance values
+if (luminanceValues.length === 0) {
+	console.error("No valid luminance values calculated");
+	
+	// Fallback: try to get colors directly from the colormap's colorMap property
+	try {
+		const originalColors = colormap.getColorSet();
+		if (originalColors && originalColors.length > 0) {
+		//	//console.log("Using original colormap colors as fallback");
+			return originalColors;
+		}
+	} catch (error) {
+		console.error("Fallback also failed:", error);
+	}
+	
+	return null;
+}
+
+// Calculate total variation (sum of absolute differences between adjacent values)
+let totalVariation = 0;
+for (let i = 1; i < luminanceValues.length; i++) {
+	totalVariation += Math.abs(luminanceValues[i] - luminanceValues[i-1]);
+}
+
+// Normalize by the number of intervals
+const normalizedVariation = luminanceValues.length > 1 ? totalVariation / (luminanceValues.length - 1) : 0;
+
+return totalVariation;
+}
+
+function chromatic_variation(colormap) {
+// Check if colormap is valid
+if (!colormap) {
+	console.error("Invalid colormap object:", colormap);
+	return 0; // Return a default value
+}
+
+// Get standardized colors from the colormap
+const colors = createStandardizedColormap(colormap);
+
+// Check if colors is valid
+if (!colors || !colors.length) {
+	console.error("Invalid colors array:", colors);
+	return 0; // Return a default value
+}
+
+// Calculate saturation for each color
+const saturationValues = [];
+for (let i = 0; i < colors.length; i++) {
+	// Create proper d3 rgb color object with error handling
+	try {
+		// Ensure rgb values are valid numbers
+		const r = parseInt(colors[i].rgb[0]);
+		const g = parseInt(colors[i].rgb[1]);
+		const b = parseInt(colors[i].rgb[2]);
+
+		if (isNaN(r) || isNaN(g) || isNaN(b)) {
+			console.error(`Invalid rgb values for color ${i}:`, colors[i].rgb);
+			continue; // Skip this color
+		}
+
+		const rgbColor = d3.rgb(r, g, b);
+
+		// Convert to HCL to get saturation (C component)
+		const hcl = d3.hcl(rgbColor);
+		
+		// The C component is the chroma/saturation
+		if (hcl && typeof hcl.c === 'number') {
+			saturationValues.push(hcl.c);
+		} else {
+			console.error(`Invalid saturation for color ${i}:`, hcl);
+		}
+	} catch (error) {
+		console.error(`Error processing color ${i}:`, error);
+	}
+}
+
+// Check if we have valid saturation values
+if (saturationValues.length === 0) {
+	console.error("No valid saturation values calculated");
+	
+	// Fallback: try to get colors directly from the colormap's colorMap property
+	try {
+		const originalColors = colormap.getColorSet();
+		if (originalColors && originalColors.length > 0) {
+			return originalColors;
+		}
+	} catch (error) {
+		console.error("Fallback also failed:", error);
+	}
+	
+	return null;
+}
+
+// Calculate total variation (sum of absolute differences between adjacent values)
+let totalVariation = 0;
+for (let i = 1; i < saturationValues.length; i++) {
+	totalVariation += Math.abs(saturationValues[i] - saturationValues[i-1]);
+}
+
+// Normalize by the number of intervals
+const normalizedVariation = saturationValues.length > 1 ? totalVariation / (saturationValues.length - 1) : 0;
+
+return totalVariation;
+}
+
+function calculate_lab_length(colormap, sampleCount = 9) {
+				// Check if colormap is valid
+				if (!colormap) {
+					console.error("Invalid colormap object:", colormap);
+					return 0; // Return a default value
+				}
+
+				// Get standardized colors from the colormap
+				const colors = createStandardizedColormap(colormap);
+
+				// Check if colors is valid
+				if (!colors || !colors.length) {
+					console.error("Invalid colors array:", colors);
+					return 0; // Return a default value
+				}
+
+				// Sample colors at equal intervals
+				const samples = [];
+				const step = (colors.length - 1) / (sampleCount - 1);
+				
+				for (let i = 0; i < sampleCount; i++) {
+					const index = Math.min(Math.floor(i * step), colors.length - 1);
+					try {
+						// Ensure rgb values are valid numbers
+						const r = parseInt(colors[index].rgb[0]);
+						const g = parseInt(colors[index].rgb[1]);
+						const b = parseInt(colors[index].rgb[2]);
+
+						if (isNaN(r) || isNaN(g) || isNaN(b)) {
+							console.error(`Invalid rgb values for sampled color ${i}:`, colors[index].rgb);
+							continue; // Skip this color
+						}
+
+						const rgbColor = d3.rgb(r, g, b);
+
+						// Convert to LAB
+						const lab = d3.lab(rgbColor);
+						samples.push(lab);
+					} catch (error) {
+						console.error(`Error sampling color ${i}:`, error);
+					}
+				}
+
+				// Check if we have valid samples
+				if (samples.length < 2) {
+					console.error("Not enough valid samples for LAB length calculation");
+					return 0;
+				}
+
+				// Calculate total LAB path length (sum of Euclidean distances between adjacent samples)
+				let totalLabLength = 0;
+				for (let i = 0; i < samples.length - 1; i++) {
+					const lab1 = samples[i];
+					const lab2 = samples[i + 1];
+					
+					// Calculate Euclidean distance between adjacent LAB colors
+					const distance = Math.sqrt(
+						Math.pow(lab2.L - lab1.L, 2) + 
+						Math.pow(lab2.a - lab1.a, 2) + 
+						Math.pow(lab2.b - lab1.b, 2)
+					);
+					
+					totalLabLength += distance;
+				}
+				console.log("Total LAB length:", totalLabLength);
+				return totalLabLength;
+			}
+
+function calculate_color_name_variation(colormap, sampleCount = 9) {
+  // Check if colormap is valid
+  if (!colormap) {
+    console.error("Invalid colormap object:", colormap);
+    return 0; // Return a default value
+  }
+
+  // Get standardized colors from the colormap
+  const colors = createStandardizedColormap(colormap);
+
+  // Check if colors is valid
+  if (!colors || !colors.length) {
+    console.error("Invalid colors array:", colors);
+    return 0; // Return a default value
+  }
+
+  // Sample colors at equal intervals
+  const samples = [];
+  const step = (colors.length - 1) / (sampleCount - 1);
+  
+  for (let i = 0; i < sampleCount; i++) {
+    const index = Math.min(Math.floor(i * step), colors.length - 1);
+    try {
+      // Ensure rgb values are valid numbers
+      const r = parseInt(colors[index].rgb[0]);
+      const g = parseInt(colors[index].rgb[1]);
+      const b = parseInt(colors[index].rgb[2]);
+
+      if (isNaN(r) || isNaN(g) || isNaN(b)) {
+        console.error(`Invalid rgb values for sampled color ${i}:`, colors[index].rgb);
+        continue; // Skip this color
+      }
+
+      samples.push(d3.rgb(r, g, b));
+    } catch (error) {
+      console.error(`Error sampling color ${i}:`, error);
+    }
+  }
+
+  // Calculate name differences between adjacent samples
+  let totalNameDifference = 0;
+  let validPairs = 0;
+  
+  for (let i = 0; i < samples.length - 1; i++) {
+    try {
+      const c0 = samples[i];
+      const c1 = samples[i + 1];
+      if (c0 && c1) {
+        const nameDiff = getNameDifference(c0, c1);
+        // 检查 nameDiff 是否为有效数值
+        if (!isNaN(nameDiff) && isFinite(nameDiff)) {
+          totalNameDifference += nameDiff;
+          validPairs++;
+        } else {
+          console.warn(`Invalid name difference value: ${nameDiff} for ${samples[i]} and ${samples[i+1]}`);
+        }
+      }
+    } catch (error) {
+      console.error(`Error calculating name difference for samples ${i} and ${i+1}:`, error);
+    }
+  }
+
+  // 如果没有有效的差异对，返回0
+  if (validPairs === 0) {
+    console.warn("No valid name difference pairs calculated");
+    return 0;
+  }
+  
+  // 返回平均名称差异
+  return totalNameDifference;
+}
+
+const commonColormaps = 		[
+"Hue-7 with Wave-0",
+"Hue-7 with Wave-1",
+"Hue-7 with Wave-2",
+"Hue-7 with Wave-3",
+"Hue-7 with Wave-4",
+"Hue-7 with Wave-5",
+"Hue-7 with Wave-6",
+"Hue-7 with Wave-7",
+"Hue-7 with Wave-8",
+"Hue-7 with Wave-9",
+"Hue-5 with Wave-0",
+"Hue-5 with Wave-1",
+"Hue-5 with Wave-2",
+"Hue-5 with Wave-3",
+"Hue-5 with Wave-4",
+"Hue-5 with Wave-5",
+"Hue-5 with Wave-6",
+"Hue-5 with Wave-7",
+"Hue-5 with Wave-8",
+"Hue-5 with Wave-9",
+"Hue-3 with Wave-0",
+"Hue-3 with Wave-1",
+"Hue-3 with Wave-2",
+"Hue-3 with Wave-3",
+"Hue-3 with Wave-4",
+"Hue-3 with Wave-5",
+"Hue-3 with Wave-6",
+"Hue-3 with Wave-7",
+"Hue-3 with Wave-8",
+"Hue-3 with Wave-9",
+];
+
+function createStandardizedColormap(colormap) {
+// Check if colormap is valid
+if (!colormap) {
+	console.error("Invalid colormap object:", colormap);
+	return null;
+}
+
+// Get the actual min/max range of the colormap
+let [minValue, maxValue] = [0, 1]; // Default range
+try {
+	const range = colormap.getMinMax();
+	if (range && range.length === 2) {
+		[minValue, maxValue] = range;
+		//console.log(`颜色映射实际范围: [${minValue}, ${maxValue}]`);
+	}
+} catch (error) {
+	console.warn("无法获取颜色映射范围，使用默认值[0, 1]:", error);
+}
+
+const SAMPLE_SIZE = 256; // Number of sampling points
+const standardizedColors = [];
+
+// Create 256 evenly distributed sampling points within the actual range
+for (let i = 0; i < SAMPLE_SIZE; i++) {
+	// Normalize to the actual range of the colormap
+	const t = minValue + (i / (SAMPLE_SIZE - 1)) * (maxValue - minValue);
+	
+	// Get color at position t using the colormap's mapping function
+	try {
+		const color = colormap.mapValue(t);
+		
+		// 添加调试信息
+		if (i === 0 || i === SAMPLE_SIZE - 1 || i === Math.floor(SAMPLE_SIZE / 2)) {
+			//console.log(`位置 ${t} 的颜色:`, color);
+		}
+		
+		// Check if color is valid
+		if (color) {
+			// Extract RGB values from the color object
+			let r, g, b;
+			
+			// Method 1: Try direct property access
+			if (typeof color.r === 'number' && typeof color.g === 'number' && typeof color.b === 'number') {
+				r = color.r;
+				g = color.g;
+				b = color.b;
+			} 
+			// Method 2: Try nested rgb property
+			else if (color.rgb && typeof color.rgb.r === 'number' && typeof color.rgb.g === 'number' && typeof color.rgb.b === 'number') {
+				r = color.rgb.r;
+				g = color.rgb.g;
+				b = color.rgb.b;
+			}
+			// Method 3: Parse from string representation
+			else if (typeof color.toString === 'function') {
+				const rgbString = color.toString();
+				const rgbMatch = rgbString.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
+				if (rgbMatch) {
+					r = parseInt(rgbMatch[1], 10);
+					g = parseInt(rgbMatch[2], 10);
+					b = parseInt(rgbMatch[3], 10);
+				}
+			}
+			
+			// Only add the color if we successfully extracted RGB values
+			if (typeof r === 'number' && typeof g === 'number' && typeof b === 'number') {
+				standardizedColors.push({
+					value: (t - minValue) / (maxValue - minValue), // Normalize back to [0,1]
+					rgb: [r, g, b]
+				});
+			} else {
+				console.warn(`无法从位置 ${t} 的颜色中提取RGB值:`, color);
+			}
+		} else {
+			console.warn(`位置 ${t} 的颜色无效`);
+		}
+	} catch (error) {
+		console.error(`获取位置 ${t} 的颜色时出错:`, error);
+		// Don't add this color to the array
+	}
+}
+
+// Make sure we have at least some valid colors
+if (standardizedColors.length === 0) {
+	console.error("在颜色映射中找不到有效颜色");
+	
+	// Fallback: try to get colors directly from the colormap's colorMap property
+	try {
+		const originalColors = colormap.getColorSet();
+		if (originalColors && originalColors.length > 0) {
+			//console.log("使用原始颜色映射颜色作为备选", originalColors);
+			return originalColors;
+		}
+	} catch (error) {
+		console.error("备选方案也失败:", error);
+	}
+	
+	return null;
+}
+
+// If we have fewer than 256 colors (due to some invalid ones), 
+// we can still work with what we have
+//console.log(`创建了标准化颜色映射，包含 ${standardizedColors.length} 个有效颜色`);
+
+return standardizedColors;
+}
+const discriminativePowerCache = {};
+const hueDiscriminativePowerCache = {};
+const luminanceVariationCache = {};
+const logLabLengthCache = {};
+const colorNameVariationCache = {};
+
+    // Pre-calculate all metrics for common colormaps
+function calculateAllDiscriminativePowers() {
+    //  //console.log("Pre-calculating metrics for common colormaps");
+      
+      // Create a table to display the results
+      let tableHTML = '<h2>Colormap Metrics</h2>';
+      tableHTML += '<table border="1" style="border-collapse: collapse; width: 100%;">';
+      tableHTML += '<tr><th>Colormap</th><th>CIEDE2000 Discriminative Power</th><th>Hue Discriminative Power</th><th>Luminance Variation</th><th>lab Length</th><th>Color Name Variation</th><th>Average</th></tr>';
+      
+      // First load and process the CSV data to calculate metrics for each colormap instance
+      d3.csv("new_data_fixed.csv").then(function(data) {
+        // Objects to store metrics for each unique colormap
+        const colormapMetrics = {};
+        
+        // Process each row in the CSV
+        data.forEach(function(row, idx) {
+          var condition = row.colormap;
+          var currentOffsets = parseFloat(row.currentOffsets);
+          var colormap = generateColormap(condition, currentOffsets);
+          //if (!colormap) return;
+          
+          try {
+            // Get standardized colormap for calculations
+            const standardColormap = getColorPreset_result(colormap);
+            
+            if (standardColormap) {
+              // Initialize metrics arrays for this colormap if they don't exist
+              if (!colormapMetrics[condition]) {
+                colormapMetrics[condition] = {
+                  cieValues: [],
+                  hueValues: [],
+                  lumValues: [],
+                  logLabValues: [],
+                  colorNameValues: []
+                };
+              }
+              
+              // Calculate CIEDE2000 Discriminative Power
+              const ciePower = discriminatory_cie(standardColormap);
+              colormapMetrics[condition].cieValues.push(ciePower);
+              
+              // Calculate Hue Discriminative Power
+              const huePower = discriminatory_hue(standardColormap);
+              colormapMetrics[condition].hueValues.push(huePower);
+              
+              // Calculate Luminance Variation
+              const lumVar = luminance_variation(standardColormap);
+              colormapMetrics[condition].lumValues.push(lumVar);
+              
+              // Calculate lab Length
+              const logLabLength = calculate_lab_length(standardColormap);
+              colormapMetrics[condition].logLabValues.push(logLabLength);
+              
+              // Calculate Color Name Variation
+              const colorNameVariation = calculate_color_name_variation(standardColormap);
+              colormapMetrics[condition].colorNameValues.push(colorNameVariation);
+              
+              ////console.log(`Calculated metrics for ${condition} instance ${idx}:`, {
+              //  CIEDE2000: ciePower.toFixed(3),
+              //  Hue: huePower.toFixed(3),
+              //  Luminance: lumVar.toFixed(3)
+              //});
+            }
+          } catch (error) {
+            console.error(`Error calculating metrics for ${condition} instance ${idx}:`, error);
+          }
+        });
+        
+        // Arrays to store values for calculating global averages
+        let cieValues = [];
+        let hueValues = [];
+        let lumValues = [];
+        let logLabValues = [];
+        let colorNameValues = [];
+        let avgValues = [];
+        
+        // Calculate average metrics for each unique colormap
+        Object.keys(colormapMetrics).forEach(name => {
+          try {
+            const metrics = colormapMetrics[name];
+            
+            // Calculate average CIEDE2000
+            const cieAvg = metrics.cieValues.length > 0 
+              ? metrics.cieValues.reduce((a, b) => a + b, 0) / metrics.cieValues.length 
+              : 0;
+            discriminativePowerCache[name] = cieAvg.toFixed(3);
+            cieValues.push(cieAvg);
+            
+            // Calculate average Hue
+            const hueAvg = metrics.hueValues.length > 0 
+              ? metrics.hueValues.reduce((a, b) => a + b, 0) / metrics.hueValues.length 
+              : 0;
+            hueDiscriminativePowerCache[name] = hueAvg.toFixed(3);
+            hueValues.push(hueAvg);
+            
+            // Calculate average Luminance
+            const lumAvg = metrics.lumValues.length > 0 
+              ? metrics.lumValues.reduce((a, b) => a + b, 0) / metrics.lumValues.length 
+              : 0;
+            luminanceVariationCache[name] = lumAvg.toFixed(3);
+            lumValues.push(lumAvg);
+            
+            // Calculate average lab Length
+            const logLabAvg = metrics.logLabValues.length > 0 
+              ? metrics.logLabValues.reduce((a, b) => a + b, 0) / metrics.logLabValues.length 
+              : 0;
+            logLabLengthCache[name] = logLabAvg.toFixed(3);
+            logLabValues.push(logLabAvg);
+            
+            // Calculate average Color Name Variation
+            const colorNameAvg = metrics.colorNameValues.length > 0 
+              ? metrics.colorNameValues.reduce((a, b) => a + b, 0) / metrics.colorNameValues.length 
+              : 0;
+            colorNameVariationCache[name] = colorNameAvg.toFixed(3);
+            colorNameValues.push(colorNameAvg);
+            
+            // Calculate overall average for this colormap
+            const colormapAverage = ((cieAvg + hueAvg + lumAvg + logLabAvg + colorNameAvg) / 5).toFixed(3);
+            avgValues.push((cieAvg + hueAvg + lumAvg + logLabAvg + colorNameAvg) / 5);
+            
+          } catch (error) {
+            console.error(`Error calculating average metrics for ${name}:`, error);
+            discriminativePowerCache[name] = "Error";
+            hueDiscriminativePowerCache[name] = "Error";
+            luminanceVariationCache[name] = "Error";
+            logLabLengthCache[name] = "Error";
+            colorNameVariationCache[name] = "Error";
+          }
+        });
+        
+        // Calculate global averages
+        const cieAverage = cieValues.length > 0 ? (cieValues.reduce((a, b) => a + b, 0) / cieValues.length).toFixed(3) : "N/A";
+        const hueAverage = hueValues.length > 0 ? (hueValues.reduce((a, b) => a + b, 0) / hueValues.length).toFixed(3) : "N/A";
+        const lumAverage = lumValues.length > 0 ? (lumValues.reduce((a, b) => a + b, 0) / lumValues.length).toFixed(3) : "N/A";
+        const logLabAverage = logLabValues.length > 0 ? (logLabValues.reduce((a, b) => a + b, 0) / logLabValues.length).toFixed(3) : "N/A";
+        const colorNameAverage = colorNameValues.length > 0 ? (colorNameValues.reduce((a, b) => a + b, 0) / colorNameValues.length).toFixed(3) : "N/A";
+        const overallAverage = avgValues.length > 0 ? (avgValues.reduce((a, b) => a + b, 0) / avgValues.length).toFixed(3) : "N/A";
+        
+        // Generate table rows in the order of commonColormaps array
+        commonColormaps.forEach(name => {
+          if (colormapMetrics[name]) {
+            // This colormap exists in our metrics data
+            try {
+              // Add to the table
+              tableHTML += `<tr>
+                <td>${name}</td>
+                <td>${discriminativePowerCache[name] || "N/A"}</td>
+                <td>${hueDiscriminativePowerCache[name] || "N/A"}</td>
+                <td>${luminanceVariationCache[name] || "N/A"}</td>
+                <td>${logLabLengthCache[name] || "N/A"}</td>
+                <td>${colorNameVariationCache[name] || "N/A"}</td>
+                <td>${((parseFloat(discriminativePowerCache[name] || 0) + 
+                        parseFloat(hueDiscriminativePowerCache[name] || 0) + 
+                        parseFloat(luminanceVariationCache[name] || 0) +
+                        parseFloat(logLabLengthCache[name] || 0) +
+                        parseFloat(colorNameVariationCache[name] || 0)) / 5).toFixed(3)}</td>
+              </tr>`;
+            } catch (error) {
+              console.error(`Error adding table row for ${name}:`, error);
+              // Add to the table with error values
+              tableHTML += `<tr>
+                <td>${name}</td>
+                <td>Error</td>
+                <td>Error</td>
+                <td>Error</td>
+                <td>Error</td>
+                <td>Error</td>
+                <td>Error</td>
+              </tr>`;
+            }
+          }
+        });
+        
+        // Add any colormaps that exist in the metrics but not in commonColormaps
+        Object.keys(colormapMetrics).forEach(name => {
+          if (!commonColormaps.includes(name)) {
+            try {
+              // Add to the table
+              tableHTML += `<tr>
+                <td>${name} (Other)</td>
+                <td>${discriminativePowerCache[name] || "N/A"}</td>
+                <td>${hueDiscriminativePowerCache[name] || "N/A"}</td>
+                <td>${luminanceVariationCache[name] || "N/A"}</td>
+                <td>${logLabLengthCache[name] || "N/A"}</td>
+                <td>${colorNameVariationCache[name] || "N/A"}</td>
+                <td>${((parseFloat(discriminativePowerCache[name] || 0) + 
+                        parseFloat(hueDiscriminativePowerCache[name] || 0) + 
+                        parseFloat(luminanceVariationCache[name] || 0) +
+                        parseFloat(logLabLengthCache[name] || 0) +
+                        parseFloat(colorNameVariationCache[name] || 0)) / 5).toFixed(3)}</td>
+              </tr>`;
+            } catch (error) {
+              console.error(`Error adding table row for ${name}:`, error);
+              // Add to the table with error values
+              tableHTML += `<tr>
+                <td>${name} (Other)</td>
+                <td>Error</td>
+                <td>Error</td>
+                <td>Error</td>
+                <td>Error</td>
+                <td>Error</td>
+                <td>Error</td>
+              </tr>`;
+            }
+          }
+        });
+        
+        // Add average row to the table
+        tableHTML += `<tr style="font-weight: bold; background-color: #f0f0f0;">
+          <td>Global Average</td>
+          <td>${cieAverage}</td>
+          <td>${hueAverage}</td>
+          <td>${lumAverage}</td>
+          <td>${logLabAverage}</td>
+          <td>${colorNameAverage}</td>
+          <td>${overallAverage}</td>
+        </tr>`;
+        
+        // Close the table
+        tableHTML += '</table>';
+        
+        // Display the table in the document
+        document.getElementById('metricsTable').innerHTML = tableHTML;
+        
+        // //console.log("Metrics caches:", {
+        //   "CIEDE2000": discriminativePowerCache,
+        //   "Hue": hueDiscriminativePowerCache,
+        //   "Luminance": luminanceVariationCache,
+        //   "lab Length": logLabLengthCache,
+        //   "Color Name Variation": colorNameVariationCache
+        // });
+        
+        // //console.log("Global average metrics:", {
+        //   "CIEDE2000 Average": cieAverage,
+        //   "Hue Average": hueAverage,
+        //   "Luminance Average": lumAverage,
+        //   "lab Length Average": logLabAverage,
+        //   "Color Name Variation Average": colorNameAverage,
+        //   "Overall Average": overallAverage
+        // });
+      }).catch(function(error) {
+        console.error("Error loading CSV for metrics calculation:", error);
+        document.getElementById('metricsTable').innerHTML = `<p>Error calculating metrics: ${error.message}</p>`;
+      });
+    }
+    
+
+  // Calculate all discriminative powers before processing the CSV
+//calculateAllDiscriminativePowers();
+
+function getColorPreset_result(preset, m0, m1, brandNew)
+{
+	////console.log("Available color presets:", Object.keys(COLOR_PRESETS));
+
+	if (m0 === undefined || m0 === null || m1 === undefined || m1 === null) {
+		m0 = 0;
+		m1 = 1;
+	}
+	var len = m1-m0;
+
+	
+	
+	var colorScheme = preset;
+	////console.log(colorScheme,Array.isArray(colorScheme));
+	////console.log("Stack:", new Error().stack);
+	var specialInterpolation = 'hsl';
+
+	if (!colorScheme)
+	{
+		console.error("Could not find preset: " + preset);
+		return null;
+	}
+	else
+	{
+		var colorset;
+
+		if (Array.isArray(colorScheme))
+		{
+			colorset = [];
+			for (var i=0, cLen = colorScheme.length; i<cLen; i++) {
+				var v = len*(i/(cLen-1));
+				var c = colorScheme[i];
+               
+				colorset.push({
+					value: c.length > 3 ? c[3] : v,
+					rgb: [c[0], c[1], c[2]]//其实是hcl，但是就这样叫吧，改变量太麻烦
+				});
+			}
+		//	//console.log(colorset);
+		}
+
+		
+		
+			////console.log(preset);
+			////console.log(colorset);
+			var newMap = new ColorMap(colorset, specialInterpolation);
+			loaded_colormaps[preset] = {
+				colormap: newMap,
+				m0: m0,
+				m1: m1
+			};
+		//	//console.log(newMap);
+			return newMap;
+		
+	}
+}
+
+// 加载 CSV，并处理数据计算 Color cat score
+    d3.csv("gvsl_data.csv").then(function(data) {
+      data.forEach(function(row, idx) {
+        var condition = row.colormap;
+        var currentOffsets = parseFloat(row.currentOffsets);
+        var colormap = generateColormap(condition, currentOffsets);
+        //if (!colormap) return;
+		//console.log(colormap);
+
+	//   var keep = checkSimilarity(colormap.colors);
+       var curColormap = getColorPreset_result(colormap.colors);
+	 //console.log(curColormap);
+        //console.log(curColormap);
+        //这里直接使用生成的 colormap 进行聚类和计算
+     //  var bandsDirect = clusterBands(curColormap);
+	   //console.log(bandsDirect);
+		//var scoreDirect = computeBandingScore(bandsDirect);
+       //console.log(scoreDirect);
+       //row["categorization"] = scoreDirect.toFixed(3);
+       //row["keep"] = keep;
+        //计算并赋值所有指标
+         if (curColormap) {
+          // CIEDE2000 Discriminative Power
+			// const ciePower = discriminatory_cie(curColormap);
+			// row["ciede2000_discriminative_power"] = ciePower.toFixed(3);
+			// //console.log(ciePower);
+			// // contrast sensitivity Discriminative Power
+			// const contrastSensitivity = discriminatory_contrast_sensitivity(curColormap);
+			// row["contrast_sensitivity_discriminative_power"] = contrastSensitivity.toFixed(3);
+
+			// //Hue Discriminative Power
+			// const huePower = discriminatory_hue(curColormap);
+			// row["hue_discriminative_power"] = huePower.toFixed(3);
+			
+			// // Luminance Variation
+			// const lumVar = luminance_variation(curColormap);
+			// row["luminance_variation"] = lumVar.toFixed(3);
+			
+        //  lab Length
+          const logLabLength = calculate_lab_length(curColormap);
+          row["lab_length"] = logLabLength.toFixed(3);
+          
+          // Color Name Variation
+        //   const colorNameVariation = calculate_color_name_variation(curColormap);
+        //   row["color_name_variation"] = colorNameVariation.toFixed(3);
+          
+        //   // Chromatic Variation
+        //   const chromaticVariation = chromatic_variation(curColormap);
+        //   row["chromatic_variation"] = chromaticVariation.toFixed(3);
+          
+          // 计算平均值
+         
+        }
+      });
+      
+      // 将处理后的数据转换为 CSV 字符串
+      var csvContent = d3.csvFormat(data);
+      
+      // 下载按钮点击事件：生成 Blob，并创建隐藏链接下载文件
+      d3.select("#downloadBtn").on("click", function() {
+        var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        if (navigator.msSaveBlob) {
+          navigator.msSaveBlob(blob, "check.csv");
+        } else {
+          var link = document.createElement("a");
+          if (link.download !== undefined) {
+            var url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "check.csv");
+            link.style.visibility = "hidden";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+        }
+      });
+    }).catch(function(error) {
+      console.error("CSV 文件加载失败：", error);
+    });
+  </script>
+</body>
+</html>

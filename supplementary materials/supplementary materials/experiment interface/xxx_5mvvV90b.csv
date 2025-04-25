@@ -1,0 +1,13 @@
+age,blockNum,center,colormap,completionCode,correct,correlation,currentOffsets,distance,education,engagementCorrect,gender,generationTime,modelChoice,noiseAmplitude,noisePerturb,noisePerturbCount,prolificId,responseTime,selectedDecoyType,selection,stimulusCorrect,stimulusNum,trialNum,vis
+18-24,1,0.098716,Hue-7 with Wave-3,,1,0,48.9280940699696,0.009787356253592148,high_school,1,male,99,1,1.1,1.9,1,xxx,143246,0,3,4,1,1,fieldSmooth
+18-24,1,0.098716,Hue-7 with Wave-3,,0,0,48.9280940699696,0.00863881690303937,high_school,1,male,135,0,1.1,1.9,1,xxx,231186,-1,2,4,2,2,fieldSmooth
+18-24,3,0.098716,Hue-7 with Wave-2,,0,0,48.9280940699696,0.017517598143566886,high_school,1,male,90,0,1.1,1.9,1,xxx,2459,-1,2,4,3,1,fieldSmooth
+18-24,3,0.098716,Hue-7 with Wave-2,,1,0,48.9280940699696,0.010017874323901641,high_school,1,male,81,1,1.1,1.9,1,xxx,4339,0,2,4,4,2,fieldSmooth
+18-24,4,0.098716,Hue-7 with Wave-1,,0,0,48.9280940699696,0.026920275324257923,high_school,1,male,81,0,1.1,1.9,1,xxx,2486,-1,2,4,5,1,fieldSmooth
+18-24,4,0.098716,Hue-7 with Wave-1,,0,0,48.9280940699696,0.007833243106530155,high_school,1,male,103,0,1.1,1.9,1,xxx,2618,-1,2,4,6,2,fieldSmooth
+18-24,6,0.098716,Hue-7 with Wave-4,,0,0,48.9280940699696,0.030814041836210553,high_school,1,male,93,0,1.1,1.9,1,xxx,880,-1,2,4,7,1,fieldSmooth
+18-24,6,0.098716,Hue-7 with Wave-4,,1,0,48.9280940699696,0.030086120409332742,high_school,1,male,73,1,1.1,1.9,1,xxx,2389,0,2,4,8,2,fieldSmooth
+18-24,8,0.098716,Hue-7 with Wave-0,,0,0,48.9280940699696,0.02642120743335033,high_school,1,male,76,0,1.1,1.9,1,xxx,1670,-1,3,4,9,1,fieldSmooth
+18-24,8,0.098716,Hue-7 with Wave-0,,0,0,48.9280940699696,0.023376081221504093,high_school,1,male,75,0,1.1,1.9,1,xxx,1108,-1,3,4,10,2,fieldSmooth
+18-24,9,0.098716,Hue-7 with Wave-5,,1,0,48.9280940699696,0.03364013767458832,high_school,1,male,89,1,1.1,1.9,1,xxx,3196,0,3,4,11,1,fieldSmooth
+18-24,9,0.098716,Hue-7 with Wave-5,,0,0,48.9280940699696,0.015213398432995011,high_school,1,male,82,0,1.1,1.9,1,xxx,171409,-1,4,4,12,2,fieldSmooth

@@ -1,0 +1,2004 @@
+<!DOCTYPE html>
+<head>
+	<!--
+	<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+	-->
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+	<script src="https://d3js.org/d3-queue.v3.min.js"></script>
+	<script src="https://d3js.org/d3.v4.min.js"></script>
+	<script src="https://d3js.org/d3-axis.v1.min.js"></script>
+	<script src="https://d3js.org/d3-fetch.v1.min.js"></script>
+
+
+	<script src="../../design/lib/c3_data.js"></script>
+	<script src="../../design/lib/c3.js"></script>
+	<script src="../../design/lib/d3.color.min.js"></script>
+	<script src="../../design/lib/d3-cam02.js"></script>
+	<script src="https://d3js.org/d3-axis.v1.min.js"></script>
+	<script src="../../src/scalar.js"></script>
+	<script src="../../design/src/generateStimuli.js"></script>
+	<script src="../../design/src/colormap.js"></script>
+	<script src="../../design/src/stimuliColormaps.js"></script>
+	<script src="../../design/src/gl_pipeline_original.js"></script>
+	<script src="../../design/src/coloranalysis.js"></script>
+	<script src="../../jnd/lib/three.min.js"></script>
+	<script src="../gaussmix.js"></script>
+	<script src="../gaussmix_bivariate.js"></script>
+	<script src="../gauss_w_noise.js"></script>
+	<script src="../gaussmix_bi_discrete.js"></script>
+	<script src="../scalar_sample_original.js"></script>
+	<script src="../choropleth_sample.js"></script>
+	<script src="../lineup.js"></script>
+	<script src="../lineup_two.js"></script>
+	<script src="../drawStimuliAll.js"></script>
+	<script src="../sim.js"></script>
+	<script src="../lineup_experiment.js"></script>
+	<script src="../lineup_experiment_two.js"></script>
+
+	<script src="../utils.js"></script>
+	<!--<script src="block_seeds.js"></script>-->
+
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			font-size: 14px;
+		}
+
+		#divColorScale {
+			text-align: center;
+		}
+
+		.county {
+	   		fill: none;
+	   		stroke: none;
+	   		pointer-events: none;
+	   }
+
+		#prompt {
+			font-size: 16px;
+		}
+
+		.modal {
+			display: none;
+			position: fixed;
+			z-index: 1000;
+			left: 0;
+			top: 0;
+			width: 100%;
+			height: 100%;
+			background-color: rgba(0,0,0,0.5);
+		}
+		.modal-content {
+			background-color: #fefefe;
+			margin: 10% auto;
+			padding: 20px;
+			border: 1px solid #888;
+			width: 300px;
+			text-align: center;
+		}
+		.continue-btn {
+			margin-top: 20px;
+			padding: 10px 20px;
+			background-color: #4CAF50;
+			color: white;
+			border: none;
+			cursor: pointer;
+			border-radius: 4px;
+		}
+		.continue-btn:hover {
+			background-color: #45a049;
+		}
+		#prolificIdInput, select {
+			padding: 8px;
+			margin: 10px 0;
+			width: 80%;
+			border: 1px solid #ddd;
+			border-radius: 4px;
+		}
+		select {
+			background-color: white;
+		}
+		.form-group {
+			margin: 10px 0;
+		}
+		#completionCodeDisplay {
+			font-size: 24px;
+			font-weight: bold;
+			margin: 20px 0;
+			padding: 10px;
+			background-color: #f0f0f0;
+			border-radius: 4px;
+		}
+	</style>
+</head>
+<body>
+
+	<div id="prolificIdModal" class="modal">
+		<div class="modal-content">
+			<h3>Welcome to the Experiment</h3>
+			<div class="form-group">
+				<p>Please enter your Prolific ID:</p>
+				<input type="text" id="prolificIdInput" required>
+			</div>
+			<div class="form-group">
+				<p>Age:</p>
+				<select id="ageSelect" required>
+					<option value="" disabled selected>Select your age range</option>
+					<option value="18-24">18-24</option>
+					<option value="25-34">25-34</option>
+					<option value="35-44">35-44</option>
+					<option value="45-54">45-54</option>
+					<option value="55-64">55-64</option>
+					<option value="65+">65+</option>
+				</select>
+			</div>
+			<div class="form-group">
+				<p>Gender:</p>
+				<select id="genderSelect" required>
+					<option value="" disabled selected>Select your gender</option>
+					<option value="male">Male</option>
+					<option value="female">Female</option>
+					<option value="other">Other</option>
+					<option value="prefer_not_to_say">Prefer not to say</option>
+				</select>
+			</div>
+			<div class="form-group">
+				<p>Highest Education Level:</p>
+				<select id="educationSelect" required>
+					<option value="" disabled selected>Select your education level</option>
+					<option value="high_school">High School</option>
+					<option value="bachelor">Bachelor's Degree</option>
+					<option value="master">Master's Degree</option>
+					<option value="phd">Ph.D.</option>
+					<option value="other">Other</option>
+				</select>
+			</div>
+			<button class="continue-btn" onclick="checkProlificId()">Continue</button>
+		</div>
+	</div>
+
+	<div id="completionModal" class="modal">
+		<div class="modal-content">
+			<h3>Experiment Complete!</h3>
+			<p>Thank you for participating. Your completion code is:</p>
+			<div id="completionCodeDisplay"></div>
+			<p>Please copy this code and submit it on Prolific to receive your payment.</p>
+		</div>
+	</div>
+
+	<div style="width: 800px">
+
+		<div id="prompt">
+			<p>Progress: <span id="stimulusNum"></span>
+			<button id="pauseButton" style="margin-left: 20px;">Pause</button></p>
+			<p style="font-size: 16px; margin-top: 10px;font-weight: bold;">Click on the image that doesn't belong</p>
+		</div>
+
+		<img id="imgLoading" src="../../img/loading2.gif" style="position: absolute; top: 220px; left: 350px" />
+
+		<div style="width: 900px; height: 450px; margin-top: 40px">
+			<div style="float: left;">
+				<table style="margin-left: 60px" id="lineupTable" cellspacing="10"></table>
+			</div>
+			<div id="divColorScale" style="width: 90; height: 210px; float: right;">
+				<div style="margin-top: 140px; font-size: 16px">
+					color<br>scale<br><canvas id="colorScaleCanvas" width="25" height="200"></canvas><br><!--low<br>values-->
+				</div>
+			</div>
+		</div>
+
+		<p id="incorrect" style="visibility: hidden">Incorrect choice. Real answer highlighted in green</p>
+		<p id="confirm" style="visibility: hidden">Press <b>ENTER</b> to confirm selection.</p>
+
+		<div id="pauseModal" class="modal">
+			<div class="modal-content">
+				<h3>Experiment Paused</h3>
+				<p>Take a break. Click continue when you're ready to resume.</p>
+				<button class="continue-btn" id="continueButton">Continue</button>
+			</div>
+		</div>
+
+	</div>
+
+	<!--
+		<p><button id="downloadData" style="font-size: 17px; visibility: hidden" onclick="downloadCSV()">Download data</button></p>
+	-->
+
+	<script type="text/javascript">
+
+		function nameSalience(c) {
+					var minE = -4.5;
+					var maxE = 0.0;
+					var i = getColorNameIndex(c);
+					var ent = c3.color.entropy(i);
+					return (ent - minE) / (maxE - minE);
+				}
+		
+				// 计算 HCL 空间中两个颜色之间的欧式距离
+				function hclDistance(c1, c2) {
+					var d = Math.pow(c1.l - c2.l, 2) + Math.pow(c1.c - c2.c, 2) + Math.pow(c1.h - c2.h, 2);
+					return Math.sqrt(d);
+				}
+		
+				// 计算颜色名称分布，依赖 c3.terms 和 getColorNameIndex 函数
+				function termDistribution(c) {
+					var i = getColorNameIndex(c); // 请确保实现该函数
+					var terms = c3.terms;
+					var dist = [];
+					for (var w = 0; w < terms.length; w++) {
+						dist.push({
+							term: terms[w],
+							p: c3.terms.prob(w, i)
+						});
+					}
+					dist.sort(function(a, b) { return b.p - a.p; });
+					return dist;
+				}
+		
+				function findMeanStd(colors) 
+				{
+						var meanJab = d3.jab(0, 0, 0);
+		
+						var mean = {
+							l: 0, a: 0, b: 0
+						};
+						var std = 0;
+		
+						for (var i=0; i<colors.length; i++) 
+						{
+							var c = colors[i];
+							mean.l += c.l;
+							mean.a += c.a;
+							mean.b += c.b;
+		
+							var cJab = d3.jab(c);
+							meanJab.J += cJab.J;
+							meanJab.a += cJab.a;
+							meanJab.b += cJab.b;
+								
+						}
+		
+						if (colors.length > 0) 
+						{
+							var k = 1/colors.length;
+							mean.l *= k;
+							mean.a *= k;
+							mean.b *= k;
+		
+							meanJab.J *= k;
+							meanJab.a *= k;
+							meanJab.b *= k;
+		
+						}
+						mean.L = mean.l;
+		
+						for (var i=0; i<colors.length; i++) {
+							var c = colors[i];
+							var d = Math.pow(c.l - mean.l, 2) + Math.pow(c.a - mean.a, 2) + Math.pow(c.b - mean.b, 2);
+							std += d;
+						}
+						if (colors.length > 0) {
+							std *= 1/colors.length;
+						}
+						return {
+							mean: d3.hcl(mean.l, mean.c, mean.h), 
+							std: Math.sqrt(std)
+						};
+				}
+		
+				// 计算相邻颜色名称的差异，依赖 getNameDifference 函数
+				function localNameDistances(colors) {
+					var nameDistances = [];
+					for (var i = 0; i < colors.length - 1; i++) {
+						var c0 = colors[i];
+						var c1 = colors[i + 1];
+						var d = getNameDifference(c0, c1); // 请确保实现该函数
+						nameDistances.push(d);
+					}
+					return nameDistances;
+				}
+		
+
+				var BAND_SAMPLES = 100;
+				var BAND_CLUSTERING_COEFFICIENT = .55;
+		
+				function clusterBands(colormap) {
+					// 辅助函数：在数组中从 start 开始找最小值的索引
+					function findMinIndex(arr, start) {
+						var m = arr[start];
+						var i = start;
+						for (var j = start + 1; j < arr.length; j++) {
+							if (m > arr[j]) {
+								m = arr[j];
+								i = j;
+							}
+						}
+						return i;
+					}
+					
+					var maxNameDistance = BAND_CLUSTERING_COEFFICIENT;
+					var SMALL_CLUSTER = Math.floor(0.5 + 0.015 * BAND_SAMPLES);
+					var samples = colormap.sampleRamp(BAND_SAMPLES);
+
+					samples = Array.from(samples);
+					// 初始时计算相邻色彩名称差异
+					var distances = localNameDistances(samples);
+					var clusters = [];
+					var clusterID = 0;
+					for (var i = 0, len = samples.length; i < samples.length; i++) {
+						var x = i / len + 0.5 * (1 / len);
+						let YY=JSON.stringify(samples[i]);
+						let xx=JSON.stringify(d3.hcl(samples[i]));
+					//	console.log(YY,xx);
+						clusters.push({
+							x: x,
+							mean: d3.hcl(samples[i]),
+							std: 999999,
+							stdErr: 999999,
+							centroid: d3.hcl(samples[i]),
+							members: [d3.hcl(samples[i])],
+							level: 0,
+							children: null,
+							id: clusterID++,
+							e: i === 0 ? [0, 0] : i === samples.length - 1 ? [1, 1] : [x, x]
+						});
+					}
+					
+					
+					
+					while (clusters.length > 1) {
+						var i0, i1, c0, c1, cD;
+						var start = 0;
+						var merged = false;
+						while (!merged && start < distances.length) {
+							i0 = findMinIndex(distances, start);
+							i1 = i0 + 1;
+							c0 = clusters[i0];
+							c1 = clusters[i1];
+							if (c0 === undefined || c1 === undefined) {
+								continue;
+							}
+							// 计算两个色带中心的名称差异
+							var nameD = getNameDifference(c0.centroid, c1.centroid); // 请确保实现该函数
+							// 根据色带成员数量调整阈值
+							var m = Math.max(c0.members.length, c1.members.length) / BAND_SAMPLES;
+							var iNameDistance = m * (-maxNameDistance) + maxNameDistance;
+							if (nameD <= maxNameDistance) {
+								merged = true;
+								cD = nameD;
+							} else {
+								start = i0 + 1;
+							}
+						}
+						if (!merged) {
+							// 合并较小的色带
+							for (var j = 0; j < clusters.length; j++) {
+								if (clusters[j].members.length < SMALL_CLUSTER) {
+									var prevDistance = (j === 0 ? Number.MAX_VALUE : distances[j - 1]);
+									if (prevDistance < distances[j] || j === clusters.length - 1) {
+										i0 = j - 1;
+										i1 = j;
+										c0 = clusters[j - 1];
+										c1 = clusters[j];
+										cD = prevDistance;
+									} else {
+										i0 = j;
+										i1 = j + 1;
+										c0 = clusters[j];
+										c1 = clusters[j + 1];
+										cD = distances[j];
+									}
+									merged = true;
+									break;
+								}
+							}
+							if (!merged) {
+								break;
+							}
+						}
+						var newC = {
+							members: c0.members.splice(0),
+							level: Math.max(c0.level, c1.level) + 1,
+							children: [c0, c1],
+							id: clusterID++
+						};
+						c0.parent = newC;
+						c1.parent = newC;
+						// 合并两个色带的成员
+						for (var j = 0; j < c1.members.length; j++) {
+							newC.members.push(c1.members[j]);
+						}
+						newC.x = (c0.x + c1.x) * 0.5;
+						newC.e = [
+							Math.min(c0.e[0], c1.e[0]),
+							Math.max(c0.e[1], c1.e[1])
+						];
+						// 选择最具“命名重要性”的颜色作为新色带中心
+						var maxSalience = Number.MIN_VALUE;
+						var maxSalienceI = -1;
+						var mostSalient = null;
+						for (var j = 0; j < newC.members.length; j++) {
+							var c = newC.members[j];
+							var salience = nameSalience(c);
+							if (maxSalience < salience) {
+								maxSalience = salience;
+								maxSalienceI = j;
+								mostSalient = c;
+							}
+						}
+						var mean_s = findMeanStd(newC.members);
+						newC.mean = mean_s.mean;
+						newC.distance = cD;
+						newC.proto = newC.members[maxSalienceI];
+						newC.centroid = mostSalient;
+						newC.term = termDistribution(newC.centroid)[0];
+						
+						if (i0 >= 1) {
+							distances[i0 - 1] = getNameDifference(newC.centroid, clusters[i0 - 1].centroid);
+						}
+						var newD = undefined;
+						if (i1 + 1 < clusters.length) {
+							newD = getNameDifference(newC.centroid, clusters[i1 + 1].centroid);
+						}
+						clusters.splice(i0, 2, newC);
+						if (newD === undefined) {
+							distances.splice(i0, 2);
+						} else {
+							distances.splice(i0, 2, newD);
+						}
+					}
+					// 添加左右引用
+					for (var i = 0; i < clusters.length; i++) {
+						var c = clusters[i];
+						if (i > 0) c.left = clusters[i - 1];
+						if (i < clusters.length - 1) c.right = clusters[i + 1];
+					}
+					return clusters;
+				}
+		
+				var DENDOGRAM_H = 5;
+				
+				var minGlobalD = Number.MAX_VALUE, maxGlobalD = Number.MIN_VALUE;
+				function computeBandingScore(bands, svg)
+				{
+					if (bands.length < 2) return 0;
+					var distinctiveness = 0, count = 0, pairwise = [], minD = Number.MAX_VALUE, maxD = Number.MIN_VALUE;
+					for (var i = 1; i < bands.length; i++) {
+						var row = [];
+						for (var j = 0; j < i; j++, count++) {
+							var d = hclDistance(bands[i].centroid, bands[j].centroid);
+							let ddd = JSON.stringify(bands[i].centroid) + "," + JSON.stringify(bands[j].centroid) + "," + d;
+							console.log(ddd)
+								
+							distinctiveness += d;
+							row.push(d);
+							maxD = Math.max(maxD, d);
+							minD = Math.min(minD, d);
+						}
+						pairwise.push(row);
+					}
+					distinctiveness /= count;
+					var bandingScore = distinctiveness * bands.length;
+					minGlobalD = Math.min(minGlobalD, minD);
+					maxGlobalD = Math.max(maxGlobalD, maxD);
+					
+					
+
+		
+					return bandingScore;
+		
+				}
+		
+		
+				var curColormap = null;
+				var resBands = null;
+				function changeColormap(colormap)
+				{
+					if (!colormap) {
+						colormap = curColormap;
+					}
+		
+		
+					if (typeof colormap === 'string')
+					{
+						colormap = getColorPreset(colormap);
+					}
+
+					curColormap = colormap;
+
+				// cluster the colormap into bands
+					var bands = clusterBands(colormap);
+		
+			
+		
+
+		}
+		
+
+			</script>
+		
+	<script>
+
+		var EXPECTED_BLOCK_SEEDS = {
+		    "mapDiscrete":
+		    [
+		    	/*
+		        {
+		            "center": 0.06,
+		            "p": 0.67,
+		            "correlation": 0.07,
+		            "expectation": 0.14077406070518209,
+		            "std": 0.03499712693147202
+		        },
+		        */
+
+				{
+		            "center": 0.0635,
+		            "p": 0.70,
+		            "correlation": 0.07,
+		            "expectation": 0.1485983954149872,
+		            "std": 0.03484861875257573
+		        }
+
+
+		    ],
+
+		    "mapSmooth":
+		    [
+		    	/*
+		        {
+		            "center": 0.07325,
+		            "p": 0.67,
+		            "correlation": 0.07,
+		            "expectation": 0.16262364695309575,
+		            "std": 0.03926666068869135
+		        },
+		        */
+
+				{
+		            "center": 0.078,
+		            "p": 0.70,
+		            "correlation": 0.07,
+		            "expectation": 0.17003971069037296,
+		            "std": 0.03831321403306914
+		        }
+
+		    ],
+		};
+		EXPECTED_BLOCK_SEEDS = undefined;
+
+		var WIDTH=200;
+		var HEIGHT=200;
+		var TRAINING = false;
+		var FINISHED_REDICTED_URL = null;
+
+		var SAMPLE_FIDELITY=40000 * 3//14000;
+		var N = SAMPLE_FIDELITY;
+		var LINEUP_N = 4;
+
+		// path to shaders
+		SHADER_PATH = "../../";
+
+		var ALL_VIS_TYPES = [
+			'mapSmooth',
+			'mapDiscrete',
+			'fieldDiscrete',
+			'fieldSmooth'
+		];
+
+		var ALL_COLORMAPS = //Object.keys(COLOR_PRESETS);
+		[
+				"Hue-7 with Wave-0",
+				"Hue-7 with Wave-1",
+				"Hue-7 with Wave-2",
+				"Hue-7 with Wave-3",
+				"Hue-7 with Wave-4",
+				"Hue-7 with Wave-5",
+				"Hue-7 with Wave-6",
+				"Hue-7 with Wave-7",
+				"Hue-7 with Wave-8",
+				"Hue-7 with Wave-9",
+				"Hue-5 with Wave-0",
+				"Hue-5 with Wave-1",
+				"Hue-5 with Wave-2",
+				"Hue-5 with Wave-3",
+				"Hue-5 with Wave-4",
+				"Hue-5 with Wave-5",
+				"Hue-5 with Wave-6",
+				"Hue-5 with Wave-7",
+				"Hue-5 with Wave-8",
+				"Hue-5 with Wave-9",
+				"Hue-3 with Wave-0",
+				"Hue-3 with Wave-1",
+				"Hue-3 with Wave-2",
+				"Hue-3 with Wave-3",
+				"Hue-3 with Wave-4",
+				"Hue-3 with Wave-5",
+				"Hue-3 with Wave-6",
+				"Hue-3 with Wave-7",
+				"Hue-3 with Wave-8",
+				"Hue-3 with Wave-9",
+
+		];
+
+		var COLOR_COMBINATION = 'abcdefghijklmnopqrstuvwxyzABCD';
+		var VIS_COMBINATION = 'd';
+
+		var RANDOMIZE_COLOR = true;
+		var RANDOMIZE_VIS = true;
+
+		var BLOCK_SEED = [
+
+
+			{center: 0.098716, correlation: 0, noisePerturbCount: 1, noisePerturb: 1.9, perturbModel: null},
+
+		];
+		var trialPerSubblock = 2;
+	var lineup = null;
+		/*
+		var lineup = new LineupExperiment(WIDTH, HEIGHT, LINEUP_N);
+		lineup.enableSelection(true);
+		*/
+
+		// store results
+		var csv = [];
+		var THEDATA = null;
+		let prolificId = '';
+		//let prolificId = '';
+		let age = '';
+		let gender = '';
+		let education = '';
+		let completionCode = '';
+
+		var stimulusCount = 0;
+		var subjectid = Math.floor(Math.random()*10000);
+
+		// experiment structure
+		// =====================
+		var trialPerBlock = 2;
+		var totalEngagementChecks = 3;  // 总共只需要3次engagement检查
+
+		// preset blocks
+		var blocks = null;
+
+		// engagement checks
+		var ENGAGEMENT = {
+			center: 0.24,
+			correlation: 0.08,
+			expectation: -1, //[0.34, 0.6]
+			perturbModel: 1
+		}
+
+		// experiment stats
+		// ================
+		var engagementCorrect = 0;
+		var stimulusCorrect = 0;
+
+		// current status
+		// ==============
+		var trialNum = -1, blockNum = -1, engagementNum = 0;
+		var distance = null;
+		BLUR = false;
+		CALLBACK_SAMPLE = false;
+		LOAD_ALL_REGARDLESS = true;
+
+		// flag on whether experiment is complete
+		var complete = false;
+
+		var EXPERIMENT_URL = 'experiment_two_model.html';
+		var DATA_URL = 'http://47.88.56.173/exp1_data';
+
+		var CUR_VIS_TYPE = null;
+
+		function updateModelGenParams(params)
+		{
+			if (params.center !== undefined)
+				M_PERTURB = params.center;
+
+			if (params.correlation !== undefined)
+				R_PERTURB = params.correlation;
+
+			if (params.noisePerturbCount !== undefined)
+				NOISE_PERTURB_COUNT = params.noisePerturbCount;
+
+			if (params.noisePerturb !== undefined)
+				NOISE_PERTURB = params.noisePerturb;
+
+			if (params.perturbModel !== undefined)
+				DEFAULT_PERTURB_MODEL = params.perturbModel;
+
+			if (params.noiseAmplitude !== undefined)
+				NOISE_AMP_MULTIPLIER = params.noiseAmplitude;
+
+		}
+		function copyModelGenParams(params, _obj)
+		{
+			var obj = {};
+			if (_obj) {
+				obj = _obj
+			};
+
+			obj.center = params.center;
+			obj.correlation = params.correlation;
+			obj.std = params.std;
+			obj.expectation = params.expectation;
+
+			obj.noiseAmplitude = params.noiseAmplitude;
+			obj.noisePerturbCount = params.noisePerturbCount;
+			obj.noisePerturb = params.noisePerturb;
+			obj.perturbModel = params.perturbModel;
+
+			return obj;
+
+		}
+		// 计算颜色命名重要性（salience），依赖 c3.color.entropy 和 index(c)
+		// 注意：index(c) 函数需要你自行提供或替换成合适的实现
+		function nameSalience(c) {
+			var minE = -4.5;
+			var maxE = 0.0;
+			var i = getColorNameIndex(c);
+			var ent = c3.color.entropy(i);
+			return (ent - minE) / (maxE - minE);
+		}
+	
+		function changeVisType(visType, callback)
+		{
+			if (visType == CUR_VIS_TYPE) {
+				// do nothing
+			}
+			else
+			{
+				// set sampling fidelity
+				// these values are calibrated for a 350 x 250 stimuli based on pilots
+				if (visType == 'fieldSmooth' || visType == 'mapSmooth')
+				{
+					SAMPLE_FIDELITY = 14000;
+					N = SAMPLE_FIDELITY
+				}
+				else
+				{
+					SAMPLE_FIDELITY = 18000 * 3;
+					N = SAMPLE_FIDELITY
+				}
+
+				CUR_VIS_TYPE = visType;
+				setRepresentationType(visType);
+
+				var table = d3.select("#lineupTable");
+				if (lineup)
+				{
+					// remove old lineup
+					table.selectAll('*').remove();
+					lineup.dispose();
+					lineup = null;
+				}
+
+				// create a new lineup elements
+				//createLineupElements(table, LINEUP_N, null, WIDTH, HEIGHT);
+
+				// draw choropleth?
+				if (visType == 'mapDiscrete') {
+					table.selectAll('svg').each(function() {
+						drawPaths(US_COUNTY_DATA, d3.select(this));
+					})
+				}
+
+				lineup = new LineupExperimentTwo(WIDTH, HEIGHT, LINEUP_N, null, null, null, null/*table*/);
+				lineup.enableSelection(true);
+
+				// set feedback
+				lineup.setClickFeedback(showConfirmPrompt, showConfirmPrompt);
+
+				d3.select('#imgLoading').style('visibility', 'hidden');
+			}
+
+		}
+
+		function changeColormap(colormapName)
+		{	
+			var colormap = getColorPreset(colormapName);
+			console.log(colormap);
+			ScalarSample.setUniversalColormap(colormap);
+
+			// draw the current currentColormap
+			var scaleCanvas = d3.select("#colorScaleCanvas");
+			colormap.drawColorScale(
+				+scaleCanvas.attr('width'),
+				+scaleCanvas.attr('height'),
+				+scaleCanvas.attr('height'), 'vertical',
+				scaleCanvas.node());
+	
+				// cluster the colormap into bands
+				var bands = clusterBands(colormap);
+
+		}
+		function nextBlock()
+		{
+			blockNum++;
+			engagementNum = 0;
+
+			if (blockNum >= blocks.length)
+			{
+				complete = true;
+				return true;
+			}
+			else
+			{
+				trialNum = 0;
+				var block = blocks[blockNum];
+
+				// Skip updating parameters for engagement blocks
+				if (!block.isEngagementBlock) {
+					// change model generation parameters
+					updateModelGenParams(block);
+
+					// see if the vis is changeing
+					// note: for first time, this will instantiate lineup
+					changeVisType(block.vis);
+
+					var dontVis = true;
+					changeColormap(block.colormap, dontVis);
+				}
+				return false;
+			}
+		}
+
+		function finish()
+		{
+			if (lineup) {
+				lineup.enableSelection(false);
+			}
+			document.getElementById('prompt').style.visibility = 'hidden';
+			document.getElementById('lineupTable').style.visibility = 'hidden';
+			document.getElementById('divColorScale').style.visibility = 'hidden';
+
+			// 先生成 completion code
+			completionCode = generateRandomCode();
+			
+			// 发送数据（包含了刚生成的 completion code）
+			sendData(undefined, function() {
+				// 数据发送成功后再显示 completion code
+				const completionModal = document.getElementById('completionModal');
+				const codeDisplay = document.getElementById('completionCodeDisplay');
+				codeDisplay.textContent = completionCode;
+				completionModal.style.display = 'block';
+
+				if (FINISHED_REDICTED_URL) {
+					window.location.replace(FINISHED_REDICTED_URL);
+				}
+			});
+		}
+
+		var stimulusReady = null, genTime;
+		var isPaused = false;
+		var totalPausedTime = 0;
+		var pauseStartTime = null;
+
+		function pauseExperiment() {
+			if (!isPaused) {
+				isPaused = true;
+				pauseStartTime = Date.now();
+				document.getElementById('pauseModal').style.display = 'block';
+			}
+		}
+
+		function resumeExperiment() {
+			if (isPaused) {
+				totalPausedTime += Date.now() - pauseStartTime;
+				isPaused = false;
+				pauseStartTime = null;
+				document.getElementById('pauseModal').style.display = 'none';
+			}
+		}
+
+		function nextTrialWithLoading()
+		{
+			d3.select('#imgLoading').style('visibility', 'visible');
+			setTimeout(function() {
+				nextTrial();
+				d3.select('#imgLoading').style('visibility', 'hidden');
+			}, 10);
+
+		}
+		function nextTrial()
+		{
+			if(trialNum >= 0) {
+				// record response
+				var b = blocks[blockNum][trialNum];
+				if(lineup.canvasIndex >= 0) {
+					// reset pause time for new trial
+					totalPausedTime = 0;
+					pauseStartTime = null;
+					isPaused = false;
+				}
+			}
+
+			LINEUP_PADDING = 10;
+			if (complete) {
+				// do nothing
+				return true;
+			}
+			else
+			{
+				// current block
+				var block = blocks[blockNum];
+
+				if (trialNum >= block.trialSequence.length-1)
+				{
+					if (nextBlock()) {
+						finish();
+						return true;
+					}
+					else
+					{
+						// 直接开始下一个trial，不显示模态框
+						stimulusReady = Date.now();
+					}
+				}
+				else {
+					trialNum++;
+				}
+
+				block = blocks[blockNum];
+
+				genTime = Date.now();
+
+				// hide lineup temporarily while model/samples are being created
+				d3.select("#lineupTable").style('visibility', 'hidden');
+
+				// 计算总trial数和当前进度
+				var totalTrials = 0;
+				var currentTrial = 0;
+				for (var i = 0; i < blocks.length; i++) {
+					totalTrials += blocks[i].trialSequence.length;
+					if (i < blockNum) {
+						currentTrial += blocks[i].trialSequence.length;
+					}
+				}
+				currentTrial += trialNum + 1;
+
+				// update status label
+				var p = currentTrial / totalTrials;
+				var label = (100 * p).toFixed(2) + '% complete';
+				d3.select('#stimulusNum').html(label);
+
+				(function(_block, _trialNum)
+				{
+					setTimeout(function()
+					{
+						if (_block.trialSequence[_trialNum] == 'e')
+						{
+							updateModelGenParams(ENGAGEMENT);
+							lineup.modelWithExpectation(ENGAGEMENT.expectation);
+						}
+						else if ( typeof block.trialSequence[_trialNum] === "object" )
+						{
+							var subblock = block.trialSequence[_trialNum]
+							updateModelGenParams(subblock);
+
+							if (subblock.std) {
+								LINEUP_TOLERANCE = subblock.std * .25;
+							}
+							else {
+								LINEUP_TOLERANCE = 0.1;
+							}
+
+							distance = lineup.modelWithExpectation(subblock.expectation);
+							if (subblock.expectation && Math.abs(distance-subblock.expectation) > LINEUP_TOLERANCE)
+							{
+								//console.error("[" + csv.length + "]: exceeded tolerance, e:" + subblock.expectation + ", d: " + distance + ", itr: " + lineup.iterations + ', conv: ' + lineup.converged);
+							}
+							else
+							{
+								//console.log("[" + csv.length + "]: e:" + subblock.expectation + ", d: " + distance + ", itr: " + lineup.iterations + ', gap: ' + Math.abs(distance-subblock.expectation));
+							}
+						}
+						else
+						{
+							updateModelGenParams(_block);
+							distance = lineup.modelWithExpectation(_block.expectation);
+						}
+
+						// keep track of time needed to generate stimulus
+						lineup.randomLineup(SAMPLE_FIDELITY, d3.select("#lineupTable"));
+						genTime = Date.now() - genTime;
+					//	drawStimuli(lineup);
+						// Store the offsets from the generated stimuli
+						//block.currentOffsets = lineup.offsets;
+						//console.log(block.currentOffsets);
+						// force a min of 250 ms delay to clear out participants' iconic memory
+						setTimeout(function()
+						{
+							// show lineup
+							d3.select("#lineupTable").style('visibility', null);
+
+							// keep track of time when stimulus is ultimately ready
+							stimulusReady = Date.now();
+						}, Math.max(0, 250-genTime));
+					}, 20);
+				})(block, trialNum);
+
+				return false;
+			}
+		}
+
+		function downloadCSV()
+		{
+			var output = "subjectid,responseid,blockNum,trialNum,colormap,distance,correct,responseTime,center,correlation,expdistance\n";
+			for (var i=0, len=csv.length; i<len; i++)
+			{
+				var d = csv[i];
+				var r =
+					subjectid + ',' +
+					(i+1) + ',' +
+					d.blockNum + ',' +
+					d.trialNum + ',' +
+					d.colormap + ',' +
+					d.distance + ',' +
+					d.correct + ',' +
+					d.responseTime + ',' +
+					d.center + ',' +
+					d.correlation + ',' +
+					d.expdistance;
+				output += r + (i==len-1 ? '' : "\n");
+			}
+			var csvContent = "data:text/csv;charset=utf-8," + output;
+			var encodedUri = encodeURI(csvContent);
+			window.open(encodedUri);
+
+			//return output;
+		}
+
+		String.prototype.replaceAt=function(index, replacement) {
+		    return this.substr(0, index) + replacement+ this.substr(index + replacement.length);
+		}
+
+		function getCombination(combination, all, randomize)
+		{
+			function resolveIndices(comb)
+			{
+				var indices = [];
+				for (var i=0; i<comb.length; i++)
+				{
+					var c = comb.charAt(i);
+					var index;
+					if (c >= 'a' && c <= 'z') {
+						index = c.charCodeAt(0) - 'a'.charCodeAt(0);
+					} else if (c >= 'A' && c <= 'Z') {
+						index = c.charCodeAt(0) - 'A'.charCodeAt(0) + 26;
+					} else {
+						// 对于其他字符，直接使用数字作为索引
+						index = parseInt(c);
+					}
+					//indices.push(index);
+					indices.push(all[index]);
+				}
+				return indices;
+			}
+
+			// randomize
+			if (randomize && combination.length > 1)
+			{
+
+				for (var i=0; i<20000; i++)
+				{
+					var r1 = Math.floor(Math.random() * combination.length);
+					var r2 = Math.floor(Math.random() * combination.length);
+					if (r1 != r2) {
+						var c1 = combination.charAt(r1);
+						var c2 = combination.charAt(r2);
+						combination = combination.replaceAt(r1, c2);
+						combination = combination.replaceAt(r2, c1);
+					}
+				}
+			}
+			return resolveIndices(combination);
+		}
+
+		function createTrialSequence()
+		{
+			var colorscales = getCombination(COLOR_COMBINATION, ALL_COLORMAPS, RANDOMIZE_COLOR);
+			console.log(colorscales);
+			var visTypes = getCombination(VIS_COMBINATION, ALL_VIS_TYPES, RANDOMIZE_VIS);
+			
+			// construct blocks
+			var generatedBlocks = [];
+			for (var v=0; v<visTypes.length; v++)
+			{
+				for (var c=0; c<colorscales.length; c++)
+				{
+					console.log('colorscales[c]: ' +colorscales[c]);
+					var bands = clusterBands(getColorPreset(colorscales[c]));
+
+					// 2. 计算 Color cat score
+					var score = computeBandingScore(bands);
+
+					var block = {
+						vis: visTypes[v],
+						colormap: colorscales[c],
+						categorization: score,
+						trialSequence: [],
+						offsets: COLOR_PRESETS[colorscales[c]].offset
+					};
+					console.log('categorization: ' + block.categorization);
+
+					console.log('block offset:', COLOR_PRESETS[block.colormap].offset);
+					var theSeed = BLOCK_SEED;
+					if (typeof EXPECTED_BLOCK_SEEDS !== 'undefined')
+					{
+						var seedType = (block.vis == 'mapDiscrete' || block.vis == 'mapSmooth') ? 'map' : 'field';
+						console.log('seedType: ' + seedType);
+						var seed = EXPECTED_BLOCK_SEEDS[seedType] || EXPECTED_BLOCK_SEEDS[block.vis];
+						if (seed)
+						{
+							console.log("using EXPECTED_BLOCK_SEEDS for " + block.vis);
+							theSeed = seed;
+						}
+					}
+
+					for (var i=0; i<theSeed.length; i++)
+					{
+						var seed = theSeed[i];
+						for (var t=0; t<trialPerSubblock; t++)
+						{
+							var subblock = {
+								trial: t+1,
+								subblock: i,
+							};
+							copyModelGenParams(seed, subblock);
+							block.trialSequence.push(subblock);
+						}
+
+						// permutate randomize subblock
+						for (var x=0; x<9000; x++)
+						{
+							var r1 = Math.floor(Math.random() * block.trialSequence.length);
+							var r2 = Math.floor(Math.random() * block.trialSequence.length);
+							var t = block.trialSequence[r2];
+							block.trialSequence[r2] = block.trialSequence[r1];
+							block.trialSequence[r1] = t;
+						}
+
+						// fix trialSequence order
+						var trialMap = {};
+						for (var j=0; j<block.trialSequence.length; j++)
+						{
+							subblock = block.trialSequence[j];
+							if (!trialMap[subblock.subblock]) {
+								trialMap[subblock.subblock] = 0;
+							}
+							subblock.trial = ++trialMap[subblock.subblock];
+						}
+					}
+					generatedBlocks.push(block);
+				}
+			}
+			blocks = generatedBlocks;
+
+			// 计算总block数
+			var totalBlocks = blocks.length;
+			
+			// 随机选择3个block来添加engagement检查
+			var engagementBlockPositions = [];
+			while (engagementBlockPositions.length < totalEngagementChecks) {
+				var pos = Math.floor(Math.random() * (totalBlocks - 1)); // -1 to avoid last block
+				if (engagementBlockPositions.indexOf(pos) === -1) {
+					engagementBlockPositions.push(pos);
+				}
+			}
+			engagementBlockPositions.sort(function(a, b) { return a - b; });
+
+			// 在选定的block之后插入engagement block
+			for (var i = engagementBlockPositions.length - 1; i >= 0; i--) {
+				var pos = engagementBlockPositions[i];
+				
+				// 随机选择一个colormap
+				var randomColorIndex = Math.floor(Math.random() * COLOR_COMBINATION.length);
+				var randomColor = COLOR_COMBINATION.charAt(randomColorIndex);
+				var colormap = ALL_COLORMAPS[resolveIndices(randomColor)[0]];
+				console.log('colormap: ' + colormap);
+				// 使用'd'对应的vis type
+				var vis = ALL_VIS_TYPES[resolveIndices(VIS_COMBINATION)[0]];
+				
+				var engagementBlock = {
+					vis: vis,
+					colormap: colormap,
+					trialSequence: ['e'], // 只包含一个engagement检查
+					isEngagementBlock: true
+				};
+				blocks.splice(pos + 1, 0, engagementBlock);
+			}
+		}
+
+		function showConfirmPrompt() {
+			d3.select("#incorrect").style('visibility', 'hidden');
+			d3.select("#confirm").style('visibility', null);
+		}
+
+		// 外部的resolveIndices函数，用于其他地方调用
+		function resolveIndices(comb)
+		{
+			var indices = [];
+			for (var i=0; i<comb.length; i++)
+			{
+				var c = comb.charAt(i);
+				var index;
+				if (c >= 'a' && c <= 'z') {
+					index = c.charCodeAt(0) - 'a'.charCodeAt(0);
+				} else if (c >= 'A' && c <= 'Z') {
+					index = c.charCodeAt(0) - 'A'.charCodeAt(0) + 26;
+				} else {
+					// 对于其他字符，直接使用数字作为索引
+					index = parseInt(c);
+				}
+				indices.push(index);
+			}
+			return indices;
+		}
+
+		function initExperiment()
+		{
+			// trial sequence
+			createTrialSequence();
+
+			// keyboard events
+			d3.select(document).on('keydown', function()
+			{
+				if (complete) {
+					// do nothing
+					return;
+				}
+
+				if (d3.event.keyCode === 13)
+				{
+					// ENTER
+					if (lineup.answer == null || lineup.answer == undefined)
+					{
+						// do nothing
+						return;
+					}
+					else if (lineup.answer == '0' && TRAINING)
+					{
+						d3.select("#incorrect").style('visibility', null);
+						d3.select("#confirm").style('visibility', 'hidden');
+						flashAnswer();
+					}
+					else
+					{
+						//console.log("ENTER");
+
+						// register response
+						var b = blocks[blockNum];
+
+						if (b.trialSequence[trialNum] == 'e')
+						{
+							// an engagement check. don't store, just check correctness
+							engagementCorrect += +lineup.answer;
+							engagementNum++;
+						}
+						else {
+
+							var colormap = b.colormap;
+							var vis = b.vis;
+							//console.log(b.offsets);
+							console.log("COLORMAP: "+b.colormap + " CATEGORIZATION: " + b.categorization);
+							var blockOffsets = b.offsets;
+							
+							// 获取用户选择的索引和正确答案索引
+							var selectedIndex = null;
+							var selectedDecoyIndex = null;
+							
+							// 只有当lineup和必要的属性都存在时才进行计算
+							if (lineup && typeof lineup.canvasIndex !== 'undefined') {
+								selectedIndex = +lineup.canvasIndex;
+								
+								if (lineup.lineup && lineup.lineup.correctSample) {
+									var correctIndices = lineup.lineup.correctSample;
+									selectedDecoyIndex = correctIndices.indexOf(selectedIndex);
+								}
+							}
+							
+							if (typeof b.trialSequence[trialNum] == 'object')
+							{
+								b = b.trialSequence[trialNum];
+							}
+
+							if (typeof lineup.getCurExpectation() == 'object') {
+								console.error("expectation is not number: " + lineup.getCurExpectation());
+							}
+
+							var stimNum = csv.length+1
+							var record = {
+								blockNum: blockNum+1,
+								trialNum: b.trial,
+								stimulusNum: stimNum,
+								vis: vis,
+								colormap: colormap,
+								distance: lineup.getCurDistance(),
+								//requestedDistance: lineup.getCurExpectation(),
+								correct: +lineup.answer,
+								modelChoice: +lineup.answerModel,
+								selection: +lineup.canvasIndex + 1,
+								generationTime: genTime,
+								categorization: b.categorization,
+							//	converged: lineup.converged,
+							//	iterations: lineup.iterations,
+								responseTime: Date.now() - stimulusReady - totalPausedTime,
+								currentOffsets: blockOffsets,
+								selectedDecoyType: selectedDecoyIndex,
+								prolificId:prolificId,
+								age: age,
+								gender: gender,
+								education: education,
+								completionCode: completionCode,
+
+									
+								// noise parameters
+								noiseAmplitude: NOISE_AMP_MULTIPLIER,
+								noisePerturb: NOISE_PERTURB,
+								noisePerturbCount: NOISE_PERTURB_COUNT,
+								center: b.center,
+								correlation: b.correlation,
+							};
+
+							//copyModelGenParams(b, record);
+
+							csv.push(record);
+							stimulusCorrect += +lineup.answer;
+							lineup.answer = null;
+
+						}
+
+						// clear old answer
+						lineup.clearAnswer();
+
+						// hide lineup
+						d3.select("#confirm").style('visibility', 'hidden');
+						d3.select("#incorrect").style('visibility', 'hidden');
+
+						nextTrialWithLoading();
+
+					}
+				}
+			});
+
+			document.getElementById('pauseButton').addEventListener('click', pauseExperiment);
+			document.getElementById('continueButton').addEventListener('click', resumeExperiment);
+
+			nextBlock();
+			trialNum = -1;
+			nextTrialWithLoading();
+		}
+
+		var flashSeq = 0, FLASH_RATE=80;
+
+		function checkData()
+		{
+			var b = 0; t=0; tMap = {};
+			for (var i=0; i<csv.length; i++)
+			{
+				var record = csv[i];
+				if (typeof record.requestedDistance == 'object')
+				{
+					console.log("[" + i + "]: expD: " + record.requestedDistance);
+				}
+				else
+				{
+					var d = Math.abs(record.distance - record.requestedDistance);
+
+					if (d > LINEUP_TOLERANCE) {
+						console.log("[" + i + "]: gap exceeds limit. expD: " + record.requestedDistance + ", gap: " + Math.abs(record.distance - record.requestedDistance));
+
+					}
+
+					// test and compare against the block seeds
+					var seq = blocks[b].trialSequence;
+					while (seq[t]=='e')
+					{
+						// skip over engagement checks
+						t++;
+					}
+
+					if (seq[t].expectation != record.requestedDistance)
+					{
+						console.log("[" + i + "]: inconsistent, seq: " + seq[t].expectation + ', data: ' + record.requestedDistance);
+					}
+
+					var strMap = "" + record.requestedDistance;
+					var rMap = tMap[strMap];
+					if (!rMap)
+					{
+						tMap[strMap] = 1;
+					}
+					else
+					{
+						tMap[strMap] = rMap + 1;
+					}
+					record.trialNum = tMap[strMap];
+
+				}
+
+				t++;
+				if (t >= blocks[b].trialSequence.length)
+				{
+					b++;
+					t=0;
+					tMap = {};
+				}
+			}
+		}
+
+		function generateRandomCode() {
+			const srcDigits = "0123456789"; // 数字
+			const srcUppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"; // 大写字母
+			const srcLowercase = "abcdefghijklmnopqrstuvwxyz"; // 小写字母
+
+			// 随机生成数字、大写字母、小写字母的数量
+			const digitsNum = Math.floor(Math.random() * 6) + 1;
+			const uppercaseNum = Math.floor(Math.random() * (8 - digitsNum - 1)) + 1;
+			const lowercaseNum = 8 - (digitsNum + uppercaseNum);
+
+			// 生成随机字符
+			const getRandomChars = (src, num) => 
+				Array.from({ length: num }, () => src[Math.floor(Math.random() * src.length)]);
+
+			let passwordArray = [
+				...getRandomChars(srcDigits, digitsNum),
+				...getRandomChars(srcUppercase, uppercaseNum),
+				...getRandomChars(srcLowercase, lowercaseNum),
+			];
+
+			// 打乱字符串顺序
+			passwordArray = passwordArray.sort(() => Math.random() - 0.5);
+
+			return passwordArray.join('');
+		}
+
+		function finish()
+		{
+			if (lineup) {
+				lineup.enableSelection(false);
+			}
+			document.getElementById('prompt').style.visibility = 'hidden';
+			document.getElementById('lineupTable').style.visibility = 'hidden';
+			document.getElementById('divColorScale').style.visibility = 'hidden';
+
+			// Generate completion code
+			completionCode = generateRandomCode();
+			
+			// Include completion code in the data
+			if (THEDATA) {
+				THEDATA.prolificId = prolificId;
+				THEDATA.completionCode = completionCode;
+			}
+
+			// Show completion modal
+			const completionModal = document.getElementById('completionModal');
+			const codeDisplay = document.getElementById('completionCodeDisplay');
+			codeDisplay.textContent = completionCode;
+			completionModal.style.display = 'block';
+
+			// Send data
+			sendData(undefined, function() {
+				if (FINISHED_REDICTED_URL) {
+					window.location.replace(FINISHED_REDICTED_URL);
+				}
+			});
+		}
+
+		function flashAnswer()
+		{
+			function flashTimeout() {
+				flashSeq++;
+				if (flashSeq % 2 == 0) {
+					lineup.highlightCorrect(true);
+				}
+				else {
+					lineup.highlightCorrect(false);
+				}
+				if (flashSeq < 4) {
+					setTimeout(flashTimeout, FLASH_RATE);
+				}
+			}
+
+			flashSeq = 0;
+			lineup.highlightCorrect(true);
+			setTimeout(flashTimeout, FLASH_RATE);
+		}
+
+		function sendData(TRIALS, callback) {
+			THEDATA = {
+				experimentalData: csv,
+				timestamp: new Date().toISOString(),
+				stimulusCorrect: stimulusCorrect || 0,
+				engagementCorrect: engagementCorrect || 0,
+				prolificId: prolificId,
+				completionCode: completionCode,
+				age: age,
+				gender: gender,
+				education: education
+
+			};
+			
+			console.log("Sending data with prolificId:", prolificId, "and completionCode:", completionCode, "and age:", age, "and gender:", gender, "and education:", education);
+
+			$.ajax({
+				type: "POST",
+				url: "http://47.88.56.173/exp1_data",
+				data: JSON.stringify(THEDATA),
+				contentType: "application/json",
+				success: function(response) {
+					if (response.status === "success") {
+						console.log("Data saved successfully:", response);
+					if (callback) callback();
+					} else {
+						console.error("Server error:", response);
+						alert("Error saving data: " + response.message);
+					}
+				},
+				error: function(xhr, status, error) {
+					console.error("Ajax error:", {xhr: xhr, status: status, error: error});
+					alert("Error saving data: " + error);
+				}
+			});
+		}
+
+		function heartbeat() {
+			$.ajax({
+				type: "GET",
+				url: "http://47.88.56.173/heartbeat",
+				success: function(response) {
+					if (response.status !== "alive") {
+						alert("Server connection lost!");
+					}
+					setTimeout(heartbeat, 30000);  // Check every 30 seconds
+				},
+				error: function() {
+					alert("Server connection lost!");
+				}
+			});
+		}
+
+		// set periodic timeout to poll heartbeat
+		function heartbeat()
+		{
+			setTimeout(function() {
+
+				$.post('http://47.88.56.173/heartbeat', {
+					totalComplete: csv.length+1,
+					totalAll: blocks.length * (trialPerBlock + engagementPerBlock)
+				}, function(data, status) {
+					//console.log("heartbeat: " + data + ", status: " + status);
+				});
+
+				heartbeat();
+			}, 15*1000);
+		}
+
+		// replace with loading actual pixel map data
+		US_COUNTY_PATHS = '../../' + US_COUNTY_PATHS;
+		US_COUNTY_PIXEL_MAP = '../../' + US_COUNTY_PIXEL_MAP;
+
+		/*
+		loadExperimentData(function() {
+			initExperiment();
+		});
+		*/
+		$(document).ready(function() {
+			// Show Prolific ID modal
+			const prolificModal = document.getElementById('prolificIdModal');
+			prolificModal.style.display = 'block';
+			//heartbeat();
+		});
+
+		function checkProlificId() {
+			prolificId = document.getElementById('prolificIdInput').value;
+			age = document.getElementById('ageSelect').value;
+			gender = document.getElementById('genderSelect').value;
+			education = document.getElementById('educationSelect').value;
+
+			if (!prolificId || !age || !gender || !education) {
+				alert('Please fill in all fields before continuing.');
+				return;
+			}
+
+	
+
+			document.getElementById('prolificIdModal').style.display = 'none';
+			initExperiment();
+		}
+	</script>
+
+
+	<!-- shaders -->
+	<!-- ********************************************** -->
+		<!-- shaders -->
+	<!-- ********************************************** -->
+	<script type="x-shader/x-fragment" id="shader_pdfSample">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform float randomSeed;
+
+		// Gold Noise 2015 dcerisano@standard3d.com
+		// - based on the Golden Ratio
+		// - uniform normalized distribution
+		// - fastest static noise generator function (also runs at low precision)
+		// - use with indicated seeding method.
+
+		const float PHI = 1.61803398874989484820459;  // Golden Ratio
+		const float P = 1.0 / 1.1;
+		const int SAMPLES = 150;
+		const float W = 1.0 / float(SAMPLES);
+
+
+		float gold_noise(in vec2 xy, in float seed){
+		       return fract(tan(distance(xy*PHI, xy)*seed)*xy.x);
+		}
+
+		void main()
+		{
+		    float pdfDensity = P * texture2D(scalarField, oTexCoord).x;
+		    float val = 0.0;
+		    float seed = randomSeed;
+
+
+		    for (int i = 0; i < SAMPLES; i++)
+		    {
+		        float r = gold_noise(gl_FragCoord.xy, fract(seed) + 1.0);
+		        val += (r < pdfDensity ? W : 0.0);
+		        seed = r;
+		    }
+
+		    gl_FragColor = vec4(val);
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_pdfPlot">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+
+		void main()
+		{
+		    float pdfDensity = texture2D(scalarField, oTexCoord).x;
+		    float val = pdfDensity;
+		    gl_FragColor = texture2D(colormap, vec2(val, 0.5));
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_vis">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform float contour;
+
+		void main()
+		{
+			float data = texture2D(scalarField, oTexCoord).x;
+
+			vec2 colormapCoord = vec2(data, 0.5);
+			if (contour >= 0.0 && abs(data-contour) < .0035)
+			{
+				gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+			}
+			else
+			{
+				if (data >= 0.0)
+				{
+					gl_FragColor = texture2D(colormap, colormapCoord);
+				}
+				else
+				{
+					gl_FragColor = vec4(1.0);
+					//gl_FragColor = mix(texture2D(colormap, colormapCoord), vec4(1.0), 0.7);
+				}
+			}
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_visWithMax">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform float minValue;
+		uniform float normTerm;
+
+		void main()
+		{
+			float data = texture2D(scalarField, oTexCoord).x;
+			if (data < -0.5)
+			{
+				gl_FragColor = vec4(1.0);
+			}
+			else
+			{
+				vec2 colormapCoord = vec2((data - minValue) * normTerm, 0.5);
+				gl_FragColor = texture2D(colormap, colormapCoord);
+			}
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_vertex">
+		varying vec2 oTexCoord;
+
+		void main()
+		{
+			oTexCoord = uv;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_blur">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform vec2 pitch;
+
+		const float GAUSS_WEIGHT = 1.0 / 1003.0;
+
+		#define T(k,l) texture2D(scalarField, oTexCoord + vec2(float(k), float(l)) * pitch).x
+
+		#define ROW(r, c1, c2, c3, c4, c5, c6, c7) (T(r, -3)*float(c1) + T(r, -2)*float(c2) + T(r, -1)*float(c3) + T(r, 0)*float(c4) + T(r, +1)*float(c5) + T(r, +2)*float(c6) + T(r, +3)*float(c7))
+
+
+		#define ROW1 ROW(-3, 0, 0 , 1 , 2  , 1 , 0 , 0)
+		#define ROW2 ROW(-2, 0, 3 , 13, 22 , 13, 3 , 0)
+		#define ROW3 ROW(-1, 1, 13, 59, 97 , 59, 13, 1)
+		#define ROW4 ROW( 0, 2, 22, 97, 159, 97, 22, 2)
+		#define ROW5 ROW(+1, 1, 13, 59, 97 , 59, 13, 1)
+		#define ROW6 ROW(+2, 0, 3 , 13, 22 , 13, 3 , 0)
+		#define ROW7 ROW(+3, 0, 0 , 1 , 2  , 1 , 0 , 0)
+
+		void main()
+		{
+			float val = (ROW1 + ROW2 + ROW3 + ROW4 + ROW5 + ROW6 + ROW7) *  GAUSS_WEIGHT;
+			if (val >= 0.0)
+		    {
+		        // blur with surround
+		        gl_FragColor = texture2D(colormap, vec2(val, 0.5));
+		    }
+		    else
+		    {
+		        gl_FragColor = vec4(1.0);
+		    }
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_blurOff">
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform vec2 pitch;
+
+		const float GAUSS_WEIGHT = 1.0 / 1003.0;
+
+		#define T(k,l) texture2D(scalarField, oTexCoord + vec2(float(k), float(l)) * pitch).x
+
+		#define ROW(r, c1, c2, c3, c4, c5, c6, c7) (T(r, -3)*float(c1) + T(r, -2)*float(c2) + T(r, -1)*float(c3) + T(r, 0)*float(c4) + T(r, +1)*float(c5) + T(r, +2)*float(c6) + T(r, +3)*float(c7))
+
+
+		#define ROW1 ROW(-3, 0, 0 , 1 , 2  , 1 , 0 , 0)
+		#define ROW2 ROW(-2, 0, 3 , 13, 22 , 13, 3 , 0)
+		#define ROW3 ROW(-1, 1, 13, 59, 97 , 59, 13, 1)
+		#define ROW4 ROW( 0, 2, 22, 97, 159, 97, 22, 2)
+		#define ROW5 ROW(+1, 1, 13, 59, 97 , 59, 13, 1)
+		#define ROW6 ROW(+2, 0, 3 , 13, 22 , 13, 3 , 0)
+		#define ROW7 ROW(+3, 0, 0 , 1 , 2  , 1 , 0 , 0)
+
+		void main()
+		{
+			float val = (ROW1 + ROW2 + ROW3 + ROW4 + ROW5 + ROW6 + ROW7) *  GAUSS_WEIGHT;
+			gl_FragColor = vec4(val);
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_median">
+		/*
+		5x5 Median
+
+		GLSL 1.0
+		Morgan McGuire and Kyle Whitson, 2006
+		Williams College
+		http://graphics.cs.williams.edu
+
+		Copyright (c) Morgan McGuire and Williams College, 2006
+		All rights reserved.
+
+		Redistribution and use in source and binary forms, with or without
+		modification, are permitted provided that the following conditions are
+		met:
+
+		Redistributions of source code must retain the above copyright notice,
+		this list of conditions and the following disclaimer.
+
+		Redistributions in binary form must reproduce the above copyright
+		notice, this list of conditions and the following disclaimer in the
+		documentation and/or other materials provided with the distribution.
+
+		THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+		A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+		HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+		SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+		LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+		DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+		THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+		(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+		OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+		*/
+
+		// Input texture
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform vec2 pitch;
+
+
+		// Change these 2 defines to change precision
+		#define vec float
+		#define toVec(image) image.x
+
+		#define s2(a, b)				temp = a; a = min(a, b); b = max(temp, b);
+		#define t2(a, b)				s2(v[a], v[b]);
+		#define t24(a, b, c, d, e, f, g, h)			t2(a, b); t2(c, d); t2(e, f); t2(g, h);
+		#define t25(a, b, c, d, e, f, g, h, i, j)		t24(a, b, c, d, e, f, g, h); t2(i, j);
+
+
+		void main() {
+
+		  vec v[25];
+
+		  // Add the pixels which make up our window to the pixel array.
+		  for(int dX = -2; dX <= 2; ++dX) {
+		    for(int dY = -2; dY <= 2; ++dY) {
+		      vec2 offset = vec2(float(dX), float(dY)) * pitch;
+
+		      // If a pixel in the window is located at (x+dX, y+dY), put it at index (dX + R)(2R + 1) + (dY + R) of the
+		      // pixel array. This will fill the pixel array, with the top left pixel of the window at pixel[0] and the
+		      // bottom right pixel of the window at pixel[N-1].
+		      v[(dX + 2) * 5 + (dY + 2)] = toVec(texture2D(scalarField, oTexCoord + offset));
+		    }
+		  }
+
+		  vec temp;
+
+		  t25(0, 1,			3, 4,		2, 4,		2, 3,		6, 7);
+		  t25(5, 7,			5, 6,		9, 7,		1, 7,		1, 4);
+		  t25(12, 13,		11, 13,		11, 12,		15, 16,		14, 16);
+		  t25(14, 15,		18, 19,		17, 19,		17, 18,		21, 22);
+		  t25(20, 22,		20, 21,		23, 24,		2, 5,		3, 6);
+		  t25(0, 6,			0, 3,		4, 7,		1, 7,		1, 4);
+		  t25(11, 14,		8, 14,		8, 11,		12, 15,		9, 15);
+		  t25(9, 12,		13, 16,		10, 16,		10, 13,		20, 23);
+		  t25(17, 23,		17, 20,		21, 24,		18, 24,		18, 21);
+		  t25(19, 22,		8, 17,		9, 18,		0, 18,		0, 9);
+		  t25(10, 19,		1, 19,		1, 10,		11, 20,		2, 20);
+		  t25(2, 11,		12, 21,		3, 21,		3, 12,		13, 22);
+		  t25(4, 22,		4, 13,		14, 23,		5, 23,		5, 14);
+		  t25(15, 24,		6, 24,		6, 15,		7, 16,		7, 19);
+		  t25(3, 11,		5, 17,		11, 17,		9, 17,		4, 10);
+		  t25(6, 12,		7, 14,		4, 6,		4, 7,		12, 14);
+		  t25(10, 14,		6, 7,		10, 12,		6, 10,		6, 17);
+		  t25(12, 17,		7, 17,		7, 10,		12, 18,		7, 12);
+		  t24(10, 18,		12, 20,		10, 20,		10, 12);
+
+		  //toVec(gl_FragColor) = v[12];
+		  vec medianValue = v[12];
+
+		  // map to color
+		  vec2 colormapCoord = vec2(medianValue, 0.5);
+		  if (medianValue >= 0.0)
+		  {
+		      // blur with surround
+		      gl_FragColor = texture2D(colormap, colormapCoord);
+		  }
+		  else
+		  {
+		      gl_FragColor = vec4(1.0);
+		  }
+		}
+	</script>
+
+	<script type="x-shader/x-fragment" id="shader_medianOff">
+		/*
+		5x5 Median
+
+		GLSL 1.0
+		Morgan McGuire and Kyle Whitson, 2006
+		Williams College
+		http://graphics.cs.williams.edu
+
+		Copyright (c) Morgan McGuire and Williams College, 2006
+		All rights reserved.
+
+		Redistribution and use in source and binary forms, with or without
+		modification, are permitted provided that the following conditions are
+		met:
+
+		Redistributions of source code must retain the above copyright notice,
+		this list of conditions and the following disclaimer.
+
+		Redistributions in binary form must reproduce the above copyright
+		notice, this list of conditions and the following disclaimer in the
+		documentation and/or other materials provided with the distribution.
+
+		THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+		A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+		HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+		SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+		LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+		DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+		THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+		(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+		OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+		*/
+
+		// Input texture
+		varying vec2 oTexCoord;
+		uniform sampler2D scalarField;
+		uniform sampler2D colormap;
+		uniform vec2 pitch;
+
+
+		// Change these 2 defines to change precision
+		#define vec float
+		#define toVec(image) image.x
+
+		#define s2(a, b)				temp = a; a = min(a, b); b = max(temp, b);
+		#define t2(a, b)				s2(v[a], v[b]);
+		#define t24(a, b, c, d, e, f, g, h)			t2(a, b); t2(c, d); t2(e, f); t2(g, h);
+		#define t25(a, b, c, d, e, f, g, h, i, j)		t24(a, b, c, d, e, f, g, h); t2(i, j);
+
+
+		void main() {
+
+		  vec v[25];
+
+		  // Add the pixels which make up our window to the pixel array.
+		  for(int dX = -2; dX <= 2; ++dX) {
+		    for(int dY = -2; dY <= 2; ++dY) {
+		      vec2 offset = vec2(float(dX), float(dY)) * pitch;
+
+		      // If a pixel in the window is located at (x+dX, y+dY), put it at index (dX + R)(2R + 1) + (dY + R) of the
+		      // pixel array. This will fill the pixel array, with the top left pixel of the window at pixel[0] and the
+		      // bottom right pixel of the window at pixel[N-1].
+		      v[(dX + 2) * 5 + (dY + 2)] = toVec(texture2D(scalarField, oTexCoord + offset));
+		    }
+		  }
+
+		  vec temp;
+
+		  t25(0, 1,			3, 4,		2, 4,		2, 3,		6, 7);
+		  t25(5, 7,			5, 6,		9, 7,		1, 7,		1, 4);
+		  t25(12, 13,		11, 13,		11, 12,		15, 16,		14, 16);
+		  t25(14, 15,		18, 19,		17, 19,		17, 18,		21, 22);
+		  t25(20, 22,		20, 21,		23, 24,		2, 5,		3, 6);
+		  t25(0, 6,			0, 3,		4, 7,		1, 7,		1, 4);
+		  t25(11, 14,		8, 14,		8, 11,		12, 15,		9, 15);
+		  t25(9, 12,		13, 16,		10, 16,		10, 13,		20, 23);
+		  t25(17, 23,		17, 20,		21, 24,		18, 24,		18, 21);
+		  t25(19, 22,		8, 17,		9, 18,		0, 18,		0, 9);
+		  t25(10, 19,		1, 19,		1, 10,		11, 20,		2, 20);
+		  t25(2, 11,		12, 21,		3, 21,		3, 12,		13, 22);
+		  t25(4, 22,		4, 13,		14, 23,		5, 23,		5, 14);
+		  t25(15, 24,		6, 24,		6, 15,		7, 16,		7, 19);
+		  t25(3, 11,		5, 17,		11, 17,		9, 17,		4, 10);
+		  t25(6, 12,		7, 14,		4, 6,		4, 7,		12, 14);
+		  t25(10, 14,		6, 7,		10, 12,		6, 10,		6, 17);
+		  t25(12, 17,		7, 17,		7, 10,		12, 18,		7, 12);
+		  t24(10, 18,		12, 20,		10, 20,		10, 12);
+
+		  //toVec(gl_FragColor) = v[12];
+		  vec medianValue = v[12];
+		  gl_FragColor = vec4(v[12]);
+		}
+	
+</script>
+
+</body>
+</html>

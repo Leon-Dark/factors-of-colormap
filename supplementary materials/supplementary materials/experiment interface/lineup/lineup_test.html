@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<head>
+	<!--
+	<link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+	<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+	-->
+	<script src="https://d3js.org/d3-queue.v3.min.js"></script>
+
+
+	<script src="../jnd/lib/d3.min.js"></script>
+	<script src="https://d3js.org/d3-axis.v1.min.js"></script>
+	<script src="../src/scalar.js"></script>
+	<script src="../design/src/colormap.js"></script>
+	<script src="../design/src/gl_pipeline.js"></script>
+	<script src="../design/src/coloranalysis.js"></script>
+	<script src="../jnd/lib/three.min.js"></script>
+	<script src="gaussmix.js"></script>
+	<script src="gaussmix_bivariate.js"></script>
+	<script src="scalar_sample.js"></script>
+	<script src="lineup.js"></script>
+	<script src="sim.js"></script>
+	<script src="lineup_experiment.js"></script>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			font-size: 12px;
+		}
+
+		#divColorScale {
+			text-align: center;
+		}
+
+	</style>
+</head>
+<body>
+	<div id="prompt">
+		<p>Stimulus <span id="stimulusNum"></span>.
+		<p>Click on the picture that <b>doesn't belong</b>
+	</div>
+
+	<div style="width: 730px; height: 450px">
+		<div style="float: left;">
+			<table id="lineupTable"></table>
+		</div>
+		<div id="divColorScale" style="width: 90; height: 210px; float: right;">
+			<div style="margin-top: 140px; font-size: 16px">
+				high<br>values<br><canvas id="colorScaleCanvas" width="25" height="140"></canvas><br>low<br>values
+			</div>
+		</div>
+
+	</div>
+
+	<p id="incorrect" style="visibility: hidden">Incorrect choice. Real answer highlighted in green</p>
+	<p id="confirm" style="visibility: hidden">Press <b>ENTER</b> to confirm selection.</p>
+	<p><button id="downloadData" style="font-size: 17px; visibility: hidden" onclick="downloadCSV()">Download data</button></p>
+
+	<script>
+		var WIDTH=200;
+		var HEIGHT=200;
+		var TRAINING = false;
+
+		var SAMPLE_FIDELITY=14000;
+		var N = SAMPLE_FIDELITY;
+		var LINEUP_N = 4;
+
+		shaderList = [
+		    {name: 'vis',		path: '../design/src/shaders/vis.frag'},
+		    {name: 'vertex',	path: '../design/src/shaders/vertex.vert'},
+		    {name: 'blur',		path: '../design/src/shaders/blur.frag'}
+		];
+
+		var lineup = new LineupExperiment(WIDTH, HEIGHT, LINEUP_N);
+		lineup.enableSelection(true);
+		var correct = false;
+		var csv = [];
+		var stimulusCount = 0;
+		var subjectid = Math.floor(Math.random()*10000);
+
+		var trialPerBlock = 10;
+		var trialNum = -1, blockNum = -1;
+		var blocks = [
+			{ colormap: 'viridis', center: 0.12, correlation: 0.07, expectation: 0.28},
+			{ colormap: 'turbo', center: 0.12, correlation: 0.07, expectation: 0.28},
+			{ colormap: 'viridis', center: 0.07, correlation: 0.07, expectation: 0.22},
+			{ colormap: 'turbo', center: 0.07, correlation: 0.07, expectation: 0.22}
+		];
+		var currentColormap = null;
+		var distance = null;
+		BLUR = true;
+
+
+		// flag on whether experiment is complete
+		var complete = false;
+
+		function nextBlock()
+		{
+			blockNum++;
+			if (blockNum >= blocks.length)
+			{
+				complete = true;
+				return true;
+			}
+			else {
+				trialNum = 0;
+				var block = blocks[blockNum];
+
+				M_PERTURB = block.center;
+				R_PERTURB = block.correlation;
+
+				var colormap = getColorPreset(block.colormap)
+				ScalarSample.setUniversalColormap(colormap);
+
+				// draw the current currentColormap
+				var scaleCanvas = d3.select("#colorScaleCanvas");
+				colormap.drawColorScale(
+					+scaleCanvas.attr('width'),
+					+scaleCanvas.attr('height'),
+					+scaleCanvas.attr('height'), 'vertical',
+					scaleCanvas.node());
+
+				return false;
+			}
+		}
+
+		function finish()
+		{
+			d3.select("#prompt").style('visibility', 'hidden');
+			d3.select('#lineupTable').style('visibility', 'hidden');
+
+			d3.select("#confirm")
+				.style('visibility', null)
+				.html(TRAINING ?
+					'Thank you! Training is complete. Please proceed to the <a href="lineup_test.html"><b>main experiment</b></a>.' :
+					'Thank you! Please download the data and send to Khairi');
+			d3.select("#downloadData")
+				.style("visibility", TRAINING ? 'hidden' : null);
+
+		}
+
+		var stimulusReady = null;
+
+		function nextTrial()
+		{
+			if (complete) {
+				// do nothing
+				return true;
+			}
+			else {
+				if (trialNum >= trialPerBlock-1)
+				{
+					if (nextBlock()) {
+						finish();
+						return true;
+					}
+				}
+				else {
+					trialNum++;
+				}
+
+
+				lineup.modelWithExpectation(blocks[blockNum].expectation);
+				distance = lineup.randomLineup(SAMPLE_FIDELITY, d3.select("#lineupTable"));
+
+				stimulusReady = Date.now();
+
+				// update status label
+				var label = (trialNum+1 + blockNum*trialPerBlock) + " / " +
+					(trialPerBlock*blocks.length);
+
+				d3.select('#stimulusNum').html(label);
+				return false;
+			}
+		}
+
+		function downloadCSV()
+		{
+			var output = "subjectid,responseid,blockNum,trialNum,colormap,distance,correct,responseTime,center,correlation,expdistance\n";
+			for (var i=0, len=csv.length; i<len; i++)
+			{
+				var d = csv[i];
+				var r =
+					subjectid + ',' +
+					(i+1) + ',' +
+					d.blockNum + ',' +
+					d.trialNum + ',' +
+					d.colormap + ',' +
+					d.distance + ',' +
+					d.correct + ',' +
+					d.responseTime + ',' +
+					d.center + ',' +
+					d.correlation + ',' +
+					d.expdistance;
+				output += r + (i==len-1 ? '' : "\n");
+			}
+			var csvContent = "data:text/csv;charset=utf-8," + output;
+			var encodedUri = encodeURI(csvContent);
+			window.open(encodedUri);
+
+			//return output;
+		}
+
+		function initExperiment()
+		{
+			function showConfirmPrompt() {
+				d3.select("#confirm").style('visibility', null);
+			}
+			lineup.setClickFeedback(showConfirmPrompt, showConfirmPrompt);
+
+			// keyboard events
+			d3.select(document).on('keydown', function()
+			{
+				if (complete) {
+					// do nothing
+					return;
+				}
+				if (d3.event.keyCode === 13)
+				{
+					// ENTER
+					if (lineup.answer == null || lineup.answer == undefined)
+					{
+						// do nothing
+					}
+					else if (lineup.answer == '0' && TRAINING)
+					{
+						d3.select("#incorrect").style('visibility', null);
+						d3.select("#confirm").style('visibility', 'hidden');
+						lineup.highlightCorrect(true);
+					}
+					else {
+						// register response
+						var b = blocks[blockNum];
+						csv.push({
+							blockNum: blockNum+1,
+							trialNum: trialNum+1,
+							colormap: b.colormap,
+							distance: lineup.curDistance,
+							correct: lineup.answer,
+							responseTime: Date.now()-stimulusReady,
+							center: b.center,
+							correlation: b.correlation,
+							expdistance: b.expectation
+						});
+
+						d3.select("#confirm").style('visibility', 'hidden');
+						d3.select("#incorrect").style('visibility', 'hidden');
+						nextTrial();
+
+					}
+				}
+			});
+
+			nextBlock();
+			trialNum = -1;
+			nextTrial();
+		}
+		initExperiment();
+
+	</script>
+</body>
+</html>

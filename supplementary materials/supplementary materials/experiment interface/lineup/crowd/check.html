@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Ishihara Check</title>
+  <style>
+    .plate-container {
+      margin-bottom: 20px;
+    }
+    .plate-container img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+    .plate-container input {
+      margin-top: 5px;
+      padding: 5px;
+      font-size: 16px;
+      width: 100px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+  <script>
+    function checkAnswers() {
+      // 定义每个图片对应的正确答案（根据实际情况修改）
+      var correctAnswers = ["12", "8", "29",  "5"];
+      
+      // 获取所有输入框
+      var inputs = document.querySelectorAll("input.answer");
+      var allCorrect = true;
+      
+      // 循环对比用户输入与正确答案
+      for (var i = 0; i < inputs.length; i++) {
+        var userInput = inputs[i].value.trim();
+        if (userInput !== correctAnswers[i]) {
+          allCorrect = false;
+          break;
+        }
+      }
+      
+      if (allCorrect) {
+        // 如果全部正确，跳转至另一个页面（请修改目标页面文件名）
+        window.location.href = "experiment_two_model.html";
+      } else {
+        // 如果存在错误，弹出消息框
+        alert("没有通过ishihara check");
+      }
+    }
+  </script>
+</head>
+<body>
+  <h1>Ishihara Check</h1>
+  <!-- 每个图片及对应输入框 -->
+  <div class="plate-container">
+    <img src="../../img/ishihara/Ishihara-Plate-01-10.jpg" alt="Ishihara Plate 01">
+    <br>
+    <input type="text" class="answer" placeholder="输入数字">
+  </div>
+  <div class="plate-container">
+    <img src="../../img/ishihara/Ishihara-Plate-02-10.jpg" alt="Ishihara Plate 02">
+    <br>
+    <input type="text" class="answer" placeholder="输入数字">
+  </div>
+  <div class="plate-container">
+    <img src="../../img/ishihara/Ishihara-Plate-03-10.jpg" alt="Ishihara Plate 03">
+    <br>
+    <input type="text" class="answer" placeholder="输入数字">
+  </div>
+  <div class="plate-container">
+    <img src="../../img/ishihara/Ishihara-Plate-04-10.jpg" alt="Ishihara Plate 04">
+    <br>
+    <input type="text" class="answer" placeholder="输入数字">
+  </div>
+
+  
+  <!-- 确定按钮 -->
+  <div>
+    <button onclick="checkAnswers()">SURE</button>
+  </div>
+</body>
+</html>

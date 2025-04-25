@@ -1,0 +1,2 @@
+age,blockNum,center,colormap,completionCode,correct,correlation,currentOffsets,distance,education,engagementCorrect,gender,generationTime,modelChoice,noiseAmplitude,noisePerturb,noisePerturbCount,prolificId,responseTime,selectedDecoyType,selection,stimulusCorrect,stimulusNum,trialNum,vis,subjectid,categorization
+35-44,2,0.098716,Hue-7 with Wave-9,,1,0,48.9271395181075,0.1216564098251199,high_school,3,male,2077,2,1.1,1.9,1,5a381de00006450001bf2691,10287,1,4,75,3,1,fieldSmooth,1,1370.884
