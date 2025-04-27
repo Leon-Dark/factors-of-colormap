@@ -204,7 +204,7 @@ Lineup.prototype.placeLineupInDOM = function()
         this.randomizedCanvases, canvasType, this.nullOption
     );
     
-    // Add red circle around the TARGET image
+    // Add highlight border around the TARGET image
     var targetIndex = this.correctSample;
     var targetCanvas = d3.select('canvas.index' + targetIndex);
     var targetTd = targetCanvas.node().parentNode;
@@ -216,8 +216,8 @@ Lineup.prototype.placeLineupInDOM = function()
         .style('left', '0')
         .style('width', '100%')
         .style('height', '100%')
-        .style('border', '3px solid red')
-        .style('border-radius', '50%')
+        .style('border', '4px solid #2196F3')  // 使用蓝色边框
+        .style('box-shadow', '0 0 10px rgba(33, 150, 243, 0.5)')  // 添加发光效果
         .style('pointer-events', 'none')
         .style('box-sizing', 'border-box');
 }
