@@ -639,15 +639,15 @@
 		var COMBINATION = 'a'//cdefghijklmnopqrstuvwxyzABCDEFGHIJKLM';
 		var RANDOMIZE_COLOR_ORDER = true;
 		var BLOCK_SEED = [
-			{ center: 0.030, correlation: 0.07, expectation: 0.100, std: 0.02},
+			//{ center: 0.030, correlation: 0.07, expectation: 0.100, std: 0.02},
 			
 			//{ center: 0.040, correlation: 0.07, expectation: 0.130, std: 0.04},
-			{ center: 0.050, correlation: 0.07, expectation: 0.150, std: 0.04},
+			//{ center: 0.050, correlation: 0.07, expectation: 0.150, std: 0.04},
 			//{ center: 0.060, correlation: 0.07, expectation: 0.190, std: 0.04},
-			{ center: 0.070, correlation: 0.07, expectation: 0.200, std: 0.04},
+			//{ center: 0.070, correlation: 0.07, expectation: 0.200, std: 0.04},
 			//{ center: 0.080, correlation: 0.07, expectation: 0.230, std: 0.04},
 			//{ center: 0.090, correlation: 0.07, expectation: 0.240, std: 0.04},
-			{ center: 0.100, correlation: 0.07, expectation: 0.250, std: 0.04},
+			//{ center: 0.100, correlation: 0.07, expectation: 0.250, std: 0.04},
 			//{ center: 0.110, correlation: 0.07, expectation: 0.270, std: 0.04},
 			//{ center: 0.120, correlation: 0.07, expectation: 0.285, std: 0.05},
 			//{ center: 0.130, correlation: 0.07, expectation: 0.300, std: 0.05},
@@ -656,7 +656,7 @@
 			
 		];
 		
-		var trialPerSubblock = 2;
+		var trialPerSubblock = 4;
 		// create lineup experiment
 		var lineup = new LineupExperiment(WIDTH, HEIGHT, LINEUP_N);
 		lineup.enableSelection(true);

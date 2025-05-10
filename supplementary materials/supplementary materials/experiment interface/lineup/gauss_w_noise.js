@@ -8,7 +8,7 @@ var NOISE_PERTURB_COUNT = 2;
 var DEFAULT_PERTURB_MODEL = 1;
 
 // 调试模式设置: 'low'=低频, 'high'=高频, 'mid'=中频, null=随机模式
-var DEBUG_FREQUENCY_MODE = 'mid'; // 设置为 null 可恢复随机模式
+var DEBUG_FREQUENCY_MODE = 'high'; // 设置为 null 可恢复随机模式
 
 
 /*******************
@@ -60,8 +60,8 @@ FrequencyModel.prototype.calculateFrequencyParameters = function() {
         this.irregularityFrequency = 6;
     } else {
         // 高频
-        this.irregularityAmplitude = 0.1;
-        this.irregularityFrequency = 9;
+        this.irregularityAmplitude = 0.15;
+        this.irregularityFrequency = 6;
     }
 
     // console.log("频率:", this.frequency,
@@ -86,12 +86,25 @@ FrequencyModel.prototype.eval = function(x, y) {
     var sectorRandomNoise = 0; 
     if (this.perturbParams && this.perturbParams.type === 3) {
         var inPerturbSector = (angle >= this.perturbParams.startAngle && angle <= this.perturbParams.endAngle);
-        var transitionWidth = Math.PI / 16;
+        var transitionWidth = Math.PI /32;
         var angleDist = Math.min(
             Math.abs(angle - this.perturbParams.startAngle),
             Math.abs(angle - this.perturbParams.endAngle)
         );
         var transitionFactor = 0;
+        
+        if (inPerturbSector) {
+            // 如果在扰动扇区内部
+            if (angleDist < transitionWidth) {
+                // 在边缘过渡区域，使用余弦插值实现平滑过渡
+                var t = angleDist / transitionWidth;
+                transitionFactor = 0.5 - 0.5 * Math.cos(Math.PI * t);
+            } else {
+                // 在扰动区域内部，完全应用扰动
+                transitionFactor = 1.0;
+            }
+        }
+        
         boundaryPhaseShift = this.perturbParams.phaseShift * transitionFactor;
     }
     var boundaryAngle = angle + boundaryPhaseShift;
@@ -112,21 +125,21 @@ FrequencyModel.prototype.eval = function(x, y) {
         noise3 = 0.3 * Math.sin(this.irregularityFrequency * 3.7 * boundaryAngle + this.randomPhase * 0.7);
     }
     
-    // 使用欧拉公式将distance和angle互相影响，创造更明显的等高线效果
-    var contourFactor = 0.5 * Math.sin(distance * 0.05 + angle * 3);
+
     
     // 合并多个噪声函数和距离影响因子，产生聚集的扰动区域
     var boundaryPerturb = this.irregularityAmplitude * this.radius * 
-                         (noise1 + noise2 + noise3) * (1 + contourFactor);
+                         (noise1 + noise2 + noise3);
     
     // 添加扇区特定的额外随机扰动
- // 添加扇区特定的额外随机扰动（简化版）
+// 添加扇区特定的额外随机扰动（简化版）
 if (this.perturbParams && this.perturbParams.type === 4) {
     var sectorWidth   =  this.perturbParams.endAngle - this.perturbParams.startAngle;
     var inPerturbSector = (angle >= this.perturbParams.startAngle &&
                            angle <= this.perturbParams.endAngle);
 
     if (inPerturbSector) {
+        
 
         // 归一化到 [0,1]，并令边界 sin = 0
         var u = (angle - this.perturbParams.startAngle) / sectorWidth;   // 0~1
@@ -134,35 +147,43 @@ if (this.perturbParams && this.perturbParams.type === 4) {
 
         // 初始化一次随机参数
         if (!this.perturbParams.sectorNoiseAmplitude) {
+            if (this.frequency < 0.05) {
+                // 低频
+                this.perturbParams.sectorNoiseAmplitude= 0.2+ Math.random() * 0.3;
+            } else if (this.frequency < 0.15) {
+                // 中频
+                this.perturbParams.sectorNoiseAmplitude = 0.1+ Math.random() * 0.3;
+      
+            } else {
+                // 高频
+                this.perturbParams.sectorNoiseAmplitude = 0.1+Math.random() * 0.2;}
             // 增大幅度使形状扰动更明显
-            this.perturbParams.sectorNoiseAmplitude = 0.4 + Math.random() * 0.3;
-            
             // 降低频率系数，使扰动更侧重于形状而不是频率
             this.perturbParams.freqFactor1 = 0.7;  // 较低频率
-            this.perturbParams.freqFactor2 = 1.3;  // 中等频率
-            this.perturbParams.freqFactor3 = 2.0;  // 较高频率但仍然适中
+            this.perturbParams.freqFactor2 = 2.3;  // 中等频率
+            this.perturbParams.freqFactor3 = 3.7;  // 较高频率但仍然适中
             
             // 使用更简单的相位偏移
             this.perturbParams.phase1 = this.randomPhase;
-            this.perturbParams.phase2 = this.randomPhase + Math.PI/3;  // 错开120度
-            this.perturbParams.phase3 = this.randomPhase + Math.PI*2/3;  // 再错开120度
+            this.perturbParams.phase2 = this.randomPhase +this.randomPhase * (1.0 + Math.random());  // 错开120度
+            this.perturbParams.phase3 = this.randomPhase + this.randomPhase * (0.5 + Math.random() * 0.5);  // 再错开120度
         }
 
         // 生成低频噪声组合，更专注于形状扰动
         var sectorNoise1 = Math.sin(this.irregularityFrequency * 
-                              this.perturbParams.freqFactor1 * angle / 2 + 
+                              this.perturbParams.freqFactor1 * angle + 
                               this.perturbParams.phase1);
                            
-        var sectorNoise2 = 0.6 * Math.sin(this.irregularityFrequency * 
-                               this.perturbParams.freqFactor2 * angle / 3 + 
+        var sectorNoise2 = 0.5 * Math.sin(this.irregularityFrequency * 
+                               this.perturbParams.freqFactor2 * angle + 
                                this.perturbParams.phase2);
                             
-        var sectorNoise3 = 0.4 * Math.sin(this.irregularityFrequency * 
-                               this.perturbParams.freqFactor3 * angle / 4 + 
+        var sectorNoise3 = 0.3 * Math.sin(this.irregularityFrequency * 
+                               this.perturbParams.freqFactor3 * angle + 
                                this.perturbParams.phase3);
         
         // 组合三个噪声
-        var combinedNoise = (sectorNoise1 + sectorNoise2 + sectorNoise3) / 1.8; // 除以1.8使总振幅适中但比之前略大
+        var combinedNoise = (sectorNoise1 + sectorNoise2 + sectorNoise3) / 1.5; // 除以1.0使总振幅适中但比之前略大
         
         // 叠加并乘以 edgeFactor 使边界自然收敛到 0
         var sectorRandomNoise = edgeFactor * this.radius * 
@@ -273,12 +294,13 @@ FrequencyModel.prototype.perturbNoise = function() {
     var startAngle, endAngle;
     if (DEBUG_FREQUENCY_MODE !== null) {
         // 在调试模式下使用固定的扇区范围：45°-135°
-        startAngle = Math.PI / 4;  // 45°
-        endAngle = Math.PI * 3/4;  // 135°
+        startAngle =  Math.PI/4 ;
+        var sectorSize = Math.PI / 3 + Math.random() * Math.PI*2/3; // 45-180度的扇区
+        endAngle = startAngle + sectorSize;
     } else {
         // 在随机模式下使用随机扇区
         startAngle = Math.random() * Math.PI * 2;
-        var sectorSize = Math.PI / 4 + Math.random() * Math.PI / 2; // 45-180度的扇区
+        var sectorSize = Math.PI / 2 + Math.random() * Math.PI/2; // 45-180度的扇区
         endAngle = startAngle + sectorSize;
         
         // 确保角度在 0-2π 范围内
@@ -369,6 +391,38 @@ function GaussMixWithNoise(w, h, svg) {
 }
 
 GaussMixWithNoise.prototype = Object.create(GaussMixBivariate.prototype);
+// 采样线性均值、γ-均值、bright%
+GaussMixWithNoise.prototype.sampleStats = function(
+    model,
+    N = 50000,
+    gamma = 2.2,
+    thr  = 0.6          // ⬅️ 新增阈值参数
+) {
+    let sumLin = 0, sumGamma = 0;
+    let bright80 = 0, brightCustom = 0;
+
+    const w = this.w, h = this.h;
+    for (let i = 0; i < N; i++) {
+        const x = Math.random() * w;
+        const y = Math.random() * h;
+        const v = model.eval(x, y);               // 线性灰度
+        sumLin   += v;
+
+        const vg = Math.pow(Math.min(Math.max(v, 0), 1), 1 / gamma); // γ-校正
+        sumGamma += vg;
+
+        if (vg > 0.8) bright80++;     // 旧版 brightPct
+        if (vg >  thr) brightCustom++;
+    }
+
+    return {
+        meanLin      : sumLin   / N,
+        meanGamma    : sumGamma / N,
+        brightPct    : bright80     / N,   // 仍然返回旧字段
+        brightPctThr : brightCustom / N    // 新字段，阈值可改
+    };
+};
+
 
 /**
  * 随机扰动入口
@@ -378,11 +432,14 @@ GaussMixWithNoise.prototype.randomPerturb = function(modelNumber) {
     var models = this.models;
     var m = models[0];
     
-    // 不管 modelNumber 是什么，都调用 perturbNoise
-    console.log("扰动噪声");
+    console.log("扰动前:", this.sampleStats(m));
     m.perturbNoise();
     this.updateModel();
+    console.log("扰动后:", this.sampleStats(m));
+    
 };
+
+
 
 /**
  * 初始化：这里生成一个 FrequencyModel，并加入 models 数组。
